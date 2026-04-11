@@ -1,8 +1,15 @@
-import Resend from "resend";
+import nodemailer from "nodemailer";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Gmail SMTP transporter
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASSWORD,
+  },
+});
 
-const TO_EMAIL = process.env.NOTIFICATION_EMAIL || "kavitha@smotpro.com";
+const TO_EMAIL = process.env.OWNER_EMAIL || "kavitha@smotpro.com";
 
 interface ChatInfo {
   visitorName: string;
@@ -16,8 +23,8 @@ interface ChatInfo {
 
 export async function sendNewChatEmail(data: ChatInfo) {
   try {
-    await resend.emails.send({
-      from: "Tawk.to Notifications <notifications@smotpro.com>",
+    await transporter.sendMail({
+      from: `"Tawk.to Notifications" <${process.env.SMTP_USER}>`,
       to: TO_EMAIL,
       subject: `🔔 New Chat on ${data.propertyName} - ${data.visitorName}`,
       html: `
@@ -100,8 +107,8 @@ export async function sendTranscriptEmail(data: ChatInfo & { messages: any[] }) 
     .join("");
 
   try {
-    await resend.emails.send({
-      from: "Tawk.to Notifications <notifications@smotpro.com>",
+    await transporter.sendMail({
+      from: `"Tawk.to Notifications" <${process.env.SMTP_USER}>`,
       to: TO_EMAIL,
       subject: `📝 Chat Ended on ${data.propertyName} - ${data.visitorName}`,
       html: `
@@ -170,8 +177,8 @@ export async function sendTicketEmail(data: {
   propertyName: string;
 }) {
   try {
-    await resend.emails.send({
-      from: "Tawk.to Notifications <notifications@smotpro.com>",
+    await transporter.sendMail({
+      from: `"Tawk.to Notifications" <${process.env.SMTP_USER}>`,
       to: TO_EMAIL,
       subject: `🎫 New Ticket #${data.ticketHumanId} - ${data.subject}`,
       html: `
