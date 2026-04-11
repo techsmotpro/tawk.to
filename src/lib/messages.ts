@@ -1,4 +1,18 @@
 import { sql } from "./db";
+import { sendNewChatEmail, sendTranscriptEmail, sendTicketEmail } from "./email";
+
+// Parse visitor info from message text (Name, Phone, Location)
+function parseVisitorInfo(messageText?: string) {
+  if (!messageText) return null;
+  const nameMatch = messageText.match(/Name\s*:\s*([^\r\n]+)/i);
+  const phoneMatch = messageText.match(/Phone\s*:\s*([^\r\n]+)/i);
+  const locationMatch = messageText.match(/Location\s*:\s*([^\r\n]+)/i);
+  return {
+    name: nameMatch?.[1]?.trim() || null,
+    phone: phoneMatch?.[1]?.trim() || null,
+    location: locationMatch?.[1]?.trim() || null,
+  };
+}
 
 // Types
 interface Visitor {
@@ -39,7 +53,7 @@ const chatStore = {
   events: [] as WebhookEvent[],
 };
 
-// Handle chat start - save to DB
+// Handle chat start - save to DB and send email
 export async function handleChatStart(data: any) {
   const { chatId, visitor, message, property, time } = data;
 
@@ -72,6 +86,18 @@ export async function handleChatStart(data: any) {
 
   addEvent(data);
 
+  // Send email notification
+  const visitorInfo = parseVisitorInfo(message?.text);
+  await sendNewChatEmail({
+    visitorName: visitorInfo?.name || visitor?.name || "Unknown",
+    visitorEmail: visitor?.email,
+    visitorCity: visitor?.city || "Unknown",
+    visitorCountry: visitor?.country || "Unknown",
+    propertyName: property?.name || "Unknown",
+    phone: visitorInfo?.phone,
+    message: message?.text,
+  });
+
   console.log(`✅ Chat saved to DB: ${chatId} - ${visitor?.name}`);
 }
 
@@ -90,7 +116,7 @@ export async function handleChatEnd(data: any) {
   console.log(`🏁 Chat ended in DB: ${chatId}`);
 }
 
-// Handle transcript - save all messages to DB
+// Handle transcript - save all messages to DB and send email
 export async function handleTranscriptCreated(data: any) {
   const { chat, time, property } = data;
 
@@ -124,10 +150,26 @@ export async function handleTranscriptCreated(data: any) {
 
   addEvent(data);
 
+  // Send transcript email
+  const visitorInfo = parseVisitorInfo(chat.messages?.find((m: any) => m.sender?.t === "v")?.msg);
+  await sendTranscriptEmail({
+    visitorName: visitorInfo?.name || chat.visitor?.name || "Unknown",
+    visitorEmail: chat.visitor?.email,
+    visitorCity: chat.visitor?.city || "Unknown",
+    visitorCountry: chat.visitor?.country || "Unknown",
+    propertyName: property?.name || "Unknown",
+    phone: visitorInfo?.phone,
+    messages: chat.messages.map((m: any) => ({
+      sender_type: m.sender?.t,
+      sender_name: m.sender?.n,
+      message_text: m.msg,
+    })),
+  });
+
   console.log(`📝 Transcript saved: ${chat.id} - ${chat.messages.length} messages`);
 }
 
-// Handle ticket created
+// Handle ticket created - save to DB and send email
 export async function handleTicketCreated(data: any) {
   const { ticket, requester, property, time } = data;
 
@@ -138,6 +180,17 @@ export async function handleTicketCreated(data: any) {
   `;
 
   addEvent(data);
+
+  // Send ticket email
+  await sendTicketEmail({
+    ticketId: ticket.id,
+    ticketHumanId: ticket.humanId,
+    subject: ticket.subject,
+    message: ticket.message,
+    requesterName: requester.name,
+    requesterEmail: requester.email,
+    propertyName: property?.name || "Unknown",
+  });
 
   console.log(`🎫 Ticket saved: #${ticket.humanId}`);
 }
