@@ -9,7 +9,12 @@ import {
 } from "@/lib/messages";
 import { initDb } from "@/lib/db";
 
-const WEBHOOK_SECRET = process.env.TAWKTO_WEBHOOK_SECRET;
+// Support multiple webhook secrets (one per property)
+const WEBHOOK_SECRETS = [
+  process.env.TAWKTO_WEBHOOK_SECRET_SMOTPRO,
+  process.env.TAWKTO_WEBHOOK_SECRET_SMOTVISA,
+  process.env.TAWKTO_WEBHOOK_SECRET, // fallback for legacy
+].filter(Boolean);
 
 // Initialize DB on first request
 let dbInitialized = false;
@@ -26,13 +31,18 @@ async function ensureDbInit() {
 }
 
 function verifySignature(body: string, signature: string): boolean {
-  if (!WEBHOOK_SECRET || !signature) return false;
+  if (WEBHOOK_SECRETS.length === 0 || !signature) return false;
 
-  const digest = createHmac("sha1", WEBHOOK_SECRET)
-    .update(body)
-    .digest("hex");
-
-  return signature === digest;
+  // Try each secret
+  for (const secret of WEBHOOK_SECRETS) {
+    const digest = createHmac("sha1", secret!)
+      .update(body)
+      .digest("hex");
+    if (signature === digest) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export async function GET() {
