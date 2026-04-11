@@ -44,7 +44,7 @@
 | # | Property Name | Property ID | Webhook Configured? |
 |---|---------------|-------------|---------------------|
 | 1 | SmotPro | `5d403f11e5ae967ef80d7fdd` | ✅ Yes |
-| 2 | Property 2 | `pending...` | ❌ No |
+| 2 | SmotVisa | `69c2446229e9681c3d64dff1` | ❌ No - Needs webhook |
 | 3 | Property 3 | `pending...` | ❌ No |
 | 4 | Property 4 | `pending...` | ❌ No |
 | 5 | Property 5 | `pending...` | ❌ No |
