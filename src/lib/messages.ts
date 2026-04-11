@@ -94,8 +94,8 @@ export async function handleChatStart(data: any) {
     visitorCity: visitor?.city || "Unknown",
     visitorCountry: visitor?.country || "Unknown",
     propertyName: property?.name || "Unknown",
-    phone: visitorInfo?.phone,
-    message: message?.text,
+    phone: visitorInfo?.phone || undefined,
+    message: message?.text || undefined,
   });
 
   console.log(`✅ Chat saved to DB: ${chatId} - ${visitor?.name}`);
@@ -158,7 +158,7 @@ export async function handleTranscriptCreated(data: any) {
     visitorCity: chat.visitor?.city || "Unknown",
     visitorCountry: chat.visitor?.country || "Unknown",
     propertyName: property?.name || "Unknown",
-    phone: visitorInfo?.phone,
+    phone: visitorInfo?.phone || undefined,
     messages: chat.messages.map((m: any) => ({
       sender_type: m.sender?.t,
       sender_name: m.sender?.n,
