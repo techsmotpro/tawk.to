@@ -9,7 +9,7 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-const TO_EMAIL = process.env.OWNER_EMAIL || "kavitha@smotpro.com";
+const TO_EMAIL = process.env.NOTIFICATION_EMAIL || "kavitha@smotpro.com";
 
 interface ChatInfo {
   visitorName: string;
