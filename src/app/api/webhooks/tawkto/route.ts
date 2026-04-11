@@ -7,8 +7,23 @@ import {
   handleTicketCreated,
   getData,
 } from "@/lib/messages";
+import { initDb } from "@/lib/db";
 
 const WEBHOOK_SECRET = process.env.TAWKTO_WEBHOOK_SECRET;
+
+// Initialize DB on first request
+let dbInitialized = false;
+
+async function ensureDbInit() {
+  if (!dbInitialized) {
+    try {
+      await initDb();
+      dbInitialized = true;
+    } catch (e) {
+      console.error("DB init error:", e);
+    }
+  }
+}
 
 function verifySignature(body: string, signature: string): boolean {
   if (!WEBHOOK_SECRET || !signature) return false;
@@ -21,10 +36,20 @@ function verifySignature(body: string, signature: string): boolean {
 }
 
 export async function GET() {
-  return NextResponse.json(getData());
+  await ensureDbInit();
+
+  try {
+    const data = await getData();
+    return NextResponse.json(data);
+  } catch (e) {
+    console.error("GET error:", e);
+    return NextResponse.json({ error: "Database error" }, { status: 500 });
+  }
 }
 
 export async function POST(req: NextRequest) {
+  await ensureDbInit();
+
   // Get raw body for signature verification
   const rawBody = await req.text();
   const signature = req.headers.get("x-tawk-signature") || "";
@@ -49,29 +74,33 @@ export async function POST(req: NextRequest) {
   console.log(`\n📨 Webhook received: ${event}`);
 
   // Handle different events
-  switch (event) {
-    case "chat:start":
-      handleChatStart(payload);
-      console.log(`🔔 NEW CHAT: ${payload.visitor?.name} from ${payload.visitor?.city}, ${payload.visitor?.country}`);
-      break;
+  try {
+    switch (event) {
+      case "chat:start":
+        await handleChatStart(payload);
+        console.log(`🔔 NEW CHAT: ${payload.visitor?.name} from ${payload.visitor?.city}, ${payload.visitor?.country}`);
+        break;
 
-    case "chat:end":
-      handleChatEnd(payload);
-      console.log(`🏁 CHAT ENDED: ${payload.chatId}`);
-      break;
+      case "chat:end":
+        await handleChatEnd(payload);
+        console.log(`🏁 CHAT ENDED: ${payload.chatId}`);
+        break;
 
-    case "chat:transcript_created":
-      handleTranscriptCreated(payload);
-      console.log(`📝 TRANSCRIPT: ${payload.chat?.visitor?.name} - ${payload.chat?.messages?.length} messages`);
-      break;
+      case "chat:transcript_created":
+        await handleTranscriptCreated(payload);
+        console.log(`📝 TRANSCRIPT: ${payload.chat?.visitor?.name} - ${payload.chat?.messages?.length} messages`);
+        break;
 
-    case "ticket:create":
-      handleTicketCreated(payload);
-      console.log(`🎫 NEW TICKET: #${payload.ticket?.humanId}`);
-      break;
+      case "ticket:create":
+        await handleTicketCreated(payload);
+        console.log(`🎫 NEW TICKET: #${payload.ticket?.humanId}`);
+        break;
 
-    default:
-      console.log(`📌 Unknown event: ${event}`);
+      default:
+        console.log(`📌 Unknown event: ${event}`);
+    }
+  } catch (e) {
+    console.error("Handler error:", e);
   }
 
   return NextResponse.json({ received: true, event });

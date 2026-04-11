@@ -2,54 +2,34 @@
 
 import { useEffect, useState } from "react";
 
-interface Visitor {
-  name: string;
-  email?: string;
-  city: string;
-  country: string;
+interface DbChat {
+  id: number;
+  chat_id: string;
+  visitor_name: string;
+  visitor_email: string | null;
+  visitor_city: string;
+  visitor_country: string;
+  property_id: string | null;
+  property_name: string | null;
+  status: string;
+  started_at: string;
+  ended_at: string | null;
+  messages?: DbMessage[];
 }
 
-interface Message {
-  sender: {
-    t: string;
-    n?: string;
-    id?: string;
-  };
-  type: string;
-  msg: string;
-  time: string;
-  attchs?: {
-    type: string;
-    content: {
-      file: {
-        url: string;
-        name: string;
-        mimeType: string;
-        size: number;
-      };
-    };
-  }[];
-}
-
-interface Chat {
-  chatId: string;
-  visitor: Visitor;
-  startTime: string;
-  property?: { id: string; name: string };
-  firstMessage?: { text: string };
-}
-
-interface Transcript {
-  chatId: string;
-  visitor: Visitor;
-  messages: Message[];
-  property: { id: string; name: string };
-  receivedAt: string;
+interface DbMessage {
+  id: number;
+  chat_id: string;
+  sender_type: string;
+  sender_name: string | null;
+  message_type: string;
+  message_text: string;
+  sent_at: string;
 }
 
 interface Data {
-  activeChats: Chat[];
-  transcripts: Transcript[];
+  activeChats: DbChat[];
+  transcripts: DbChat[];
 }
 
 export default function Dashboard() {
@@ -75,12 +55,15 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  const formatTime = (time: string) => new Date(time).toLocaleString();
+  const formatTime = (time: string) => {
+    if (!time) return "";
+    return new Date(time).toLocaleString();
+  };
 
-  const getSenderLabel = (sender: Message["sender"]) => {
-    if (sender.t === "v") return "👤 Visitor";
-    if (sender.t === "a") return `🧑‍💼 ${sender.n || "Agent"}`;
-    return `🤖 ${sender.n || "System"}`;
+  const getSenderLabel = (senderType: string, senderName: string | null) => {
+    if (senderType === "v" || senderType === "visitor") return "👤 Visitor";
+    if (senderType === "a" || senderType === "agent") return `🧑‍💼 ${senderName || "Agent"}`;
+    return `🤖 ${senderName || "System"}`;
   };
 
   if (loading) {
@@ -113,37 +96,32 @@ export default function Dashboard() {
             <div className="grid gap-4">
               {data.activeChats.map((chat) => (
                 <div
-                  key={chat.chatId}
+                  key={chat.chat_id}
                   className="bg-green-900/30 border border-green-600 rounded-lg p-4"
                 >
                   <div className="flex justify-between items-start">
                     <div>
                       <span className="font-bold text-lg">
-                        👤 {chat.visitor.name}
+                        👤 {chat.visitor_name}
                       </span>
-                      {chat.visitor.email && (
+                      {chat.visitor_email && (
                         <span className="text-gray-400 ml-2">
-                          📧 {chat.visitor.email}
+                          📧 {chat.visitor_email}
                         </span>
                       )}
                     </div>
                     <span className="text-gray-400 text-sm">
-                      {formatTime(chat.startTime)}
+                      {formatTime(chat.started_at)}
                     </span>
                   </div>
                   <div className="mt-2 text-gray-400">
-                    🌍 {chat.visitor.city}, {chat.visitor.country}
-                    {chat.property && (
+                    🌍 {chat.visitor_city}, {chat.visitor_country}
+                    {chat.property_name && (
                       <span className="ml-4">
-                        📍 {chat.property.name}
+                        📍 {chat.property_name}
                       </span>
                     )}
                   </div>
-                  {chat.firstMessage && (
-                    <div className="mt-3 bg-gray-800 rounded p-3 italic">
-                      "{chat.firstMessage.text}"
-                    </div>
-                  )}
                 </div>
               ))}
             </div>
@@ -163,7 +141,7 @@ export default function Dashboard() {
             <div className="grid gap-6">
               {data.transcripts.map((transcript) => (
                 <div
-                  key={transcript.chatId}
+                  key={transcript.chat_id}
                   className="bg-gray-800 rounded-lg overflow-hidden"
                 >
                   {/* Header */}
@@ -171,55 +149,50 @@ export default function Dashboard() {
                     <div className="flex justify-between items-center">
                       <div>
                         <span className="font-bold text-lg">
-                          👤 {transcript.visitor.name}
+                          👤 {transcript.visitor_name}
                         </span>
-                        {transcript.visitor.email && (
+                        {transcript.visitor_email && (
                           <span className="text-gray-400 ml-2">
-                            📧 {transcript.visitor.email}
+                            📧 {transcript.visitor_email}
                           </span>
                         )}
                       </div>
                       <span className="text-gray-400 text-sm">
-                        {formatTime(transcript.receivedAt)}
+                        {formatTime(transcript.ended_at || transcript.started_at)}
                       </span>
                     </div>
                     <div className="mt-1 text-gray-400 text-sm">
-                      🌍 {transcript.visitor.city}, {transcript.visitor.country}
-                      <span className="mx-2">|</span>
-                      📍 {transcript.property.name}
-                      <span className="mx-2">|</span>
-                      💬 {transcript.messages.length} messages
+                      🌍 {transcript.visitor_city}, {transcript.visitor_country}
+                      {transcript.property_name && (
+                        <>
+                          <span className="mx-2">|</span>
+                          📍 {transcript.property_name}
+                        </>
+                      )}
+                      {transcript.messages && (
+                        <>
+                          <span className="mx-2">|</span>
+                          💬 {transcript.messages.length} messages
+                        </>
+                      )}
                     </div>
                   </div>
 
                   {/* Messages */}
                   <div className="p-4 space-y-3">
-                    {transcript.messages.map((msg, idx) => (
+                    {transcript.messages?.map((msg) => (
                       <div
-                        key={idx}
-                        className={`pl-3 border-l-3 ${
-                          msg.sender.t === "v"
+                        key={msg.id}
+                        className={`pl-3 border-l-4 ${
+                          msg.sender_type === "v" || msg.sender_type === "visitor"
                             ? "border-blue-500"
                             : "border-green-500"
                         }`}
                       >
                         <div className="text-xs text-gray-500 mb-1">
-                          {getSenderLabel(msg.sender)} • {formatTime(msg.time)}
+                          {getSenderLabel(msg.sender_type, msg.sender_name)} • {formatTime(msg.sent_at)}
                         </div>
-                        <div className="whitespace-pre-wrap">{msg.msg}</div>
-                        {msg.attchs?.map((att, i) => (
-                          <div key={i} className="mt-2 text-sm">
-                            📎{" "}
-                            <a
-                              href={att.content.file.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-blue-400 hover:underline"
-                            >
-                              {att.content.file.name}
-                            </a>
-                          </div>
-                        ))}
+                        <div className="whitespace-pre-wrap">{msg.message_text}</div>
                       </div>
                     ))}
                   </div>
