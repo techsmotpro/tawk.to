@@ -165,6 +165,13 @@ export async function getData() {
     SELECT * FROM chats WHERE status = 'active' ORDER BY started_at DESC
   `;
 
+  // Get messages for each active chat
+  for (const chat of activeChats) {
+    chat.messages = await sql`
+      SELECT * FROM messages WHERE chat_id = ${chat.chat_id} ORDER BY sent_at ASC
+    `;
+  }
+
   const transcripts = await sql`
     SELECT c.*, COUNT(m.id) as message_count
     FROM chats c
