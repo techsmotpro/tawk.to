@@ -13,6 +13,7 @@ import { initDb } from "@/lib/db";
 const WEBHOOK_SECRETS = [
   process.env.TAWKTO_WEBHOOK_SECRET_SMOTPRO,
   process.env.TAWKTO_WEBHOOK_SECRET_SMOTVISA,
+  process.env.TAWKTO_WEBHOOK_SECRET_VISAAGENTSINHYD,
   process.env.TAWKTO_WEBHOOK_SECRET, // fallback for legacy
 ].filter(Boolean);
 
