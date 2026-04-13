@@ -7,6 +7,7 @@ interface DbChat {
   chat_id: string;
   visitor_name: string;
   visitor_email: string | null;
+  visitor_phone: string | null;
   visitor_city: string;
   visitor_country: string;
   property_id: string | null;
@@ -286,10 +287,10 @@ export default function Dashboard() {
                       </div>
 
                       {/* Phone */}
-                      {visitorInfo?.phone && (
+                      {(visitorInfo?.phone || chat.visitor_phone) && (
                         <div className="mb-2">
                           <span className="text-xs text-gray-500">Phone</span>
-                          <div className="text-black">{visitorInfo.phone}</div>
+                          <div className="text-black font-medium">{visitorInfo?.phone || chat.visitor_phone}</div>
                         </div>
                       )}
 
@@ -359,10 +360,10 @@ export default function Dashboard() {
                       </div>
 
                       {/* Phone */}
-                      {visitorInfo?.phone && (
+                      {(visitorInfo?.phone || transcript.visitor_phone) && (
                         <div className="mb-3">
                           <span className="text-xs text-gray-500 uppercase tracking-wide">Phone</span>
-                          <div className="text-black font-medium">{visitorInfo.phone}</div>
+                          <div className="text-black font-medium">{visitorInfo?.phone || transcript.visitor_phone}</div>
                         </div>
                       )}
 
