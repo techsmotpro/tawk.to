@@ -73,9 +73,11 @@ export async function handleChatStart(data: any) {
 
   // Save first message
   if (message?.text) {
+    const senderType = message.sender?.t || message.sender?.type || 'visitor';
+    const normalizedType = senderType === 'visitor' ? 'v' : senderType;
     await sql`
       INSERT INTO messages (chat_id, sender_type, sender_name, message_type, message_text, sent_at)
-      VALUES (${chatId}, ${message.sender?.type || 'visitor'}, ${message.sender?.type === 'agent' ? message.sender?.name : visitor?.name}, ${message.type}, ${message.text}, ${time})
+      VALUES (${chatId}, ${normalizedType}, ${normalizedType === 'a' ? message.sender?.name : visitor?.name}, ${message.type}, ${message.text}, ${time})
     `;
   }
 

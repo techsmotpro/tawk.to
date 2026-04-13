@@ -138,10 +138,16 @@ export default function Dashboard() {
 
   // Parse visitor info from message text
   const parseVisitorInfo = (messages: DbMessage[] | undefined) => {
-    const visitorMsg = messages?.find((m) => m.sender_type === "v");
-    if (!visitorMsg?.message_text) return null;
+    if (!messages || messages.length === 0) return null;
 
-    const text = visitorMsg.message_text;
+    // Find ANY message that contains "Phone :" pattern — check visitor messages first, then all messages
+    const visitorMsgs = messages.filter((m) => m.sender_type === "v" || m.sender_type === "visitor");
+    const allMsgs = visitorMsgs.length > 0 ? visitorMsgs : messages;
+    const phoneMsg = allMsgs.find((m) => /Phone\s*:/i.test(m.message_text || ""));
+    const targetMsg = phoneMsg || allMsgs[0];
+    if (!targetMsg?.message_text) return null;
+
+    const text = targetMsg.message_text;
     const nameMatch = text.match(/Name\s*:\s*([^\r\n]+)/i);
     const phoneMatch = text.match(/Phone\s*:\s*([^\r\n]+)/i);
     const locationMatch = text.match(/Location\s*:\s*([^\r\n]+)/i);
@@ -287,12 +293,12 @@ export default function Dashboard() {
                       </div>
 
                       {/* Phone */}
-                      {(visitorInfo?.phone || chat.visitor_phone) && (
-                        <div className="mb-2">
-                          <span className="text-xs text-gray-500">Phone</span>
-                          <div className="text-black font-medium">{visitorInfo?.phone || chat.visitor_phone}</div>
+                      <div className="mb-2">
+                        <span className="text-xs text-gray-500">Phone</span>
+                        <div className="text-black font-medium">
+                          {visitorInfo?.phone || chat.visitor_phone || "Not provided"}
                         </div>
-                      )}
+                      </div>
 
                       {/* Location */}
                       <div className="mb-2">
@@ -360,12 +366,12 @@ export default function Dashboard() {
                       </div>
 
                       {/* Phone */}
-                      {(visitorInfo?.phone || transcript.visitor_phone) && (
-                        <div className="mb-3">
-                          <span className="text-xs text-gray-500 uppercase tracking-wide">Phone</span>
-                          <div className="text-black font-medium">{visitorInfo?.phone || transcript.visitor_phone}</div>
+                      <div className="mb-3">
+                        <span className="text-xs text-gray-500 uppercase tracking-wide">Phone</span>
+                        <div className="text-black font-medium">
+                          {visitorInfo?.phone || transcript.visitor_phone || "Not provided"}
                         </div>
-                      )}
+                      </div>
 
                       {/* Location */}
                       <div className="mb-3">
