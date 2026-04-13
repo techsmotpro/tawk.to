@@ -191,6 +191,15 @@ export default function Dashboard() {
               <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
                 {data.transcripts.length} Chats
               </span>
+              <button
+                onClick={async () => {
+                  await fetch("/api/auth/logout", { method: "POST" });
+                  window.location.href = "/login";
+                }}
+                className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-medium hover:bg-red-200 transition-colors cursor-pointer"
+              >
+                Logout
+              </button>
             </div>
           </div>
         </div>
