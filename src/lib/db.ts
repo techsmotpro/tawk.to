@@ -10,6 +10,7 @@ export async function initDb() {
       chat_id VARCHAR(255) UNIQUE NOT NULL,
       visitor_name VARCHAR(255),
       visitor_email VARCHAR(255),
+      visitor_phone VARCHAR(50),
       visitor_city VARCHAR(255),
       visitor_country VARCHAR(10),
       property_id VARCHAR(255),
@@ -49,6 +50,13 @@ export async function initDb() {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     )
   `;
+
+  // Add visitor_phone column if it doesn't exist (migration for existing DBs)
+  try {
+    await sql`ALTER TABLE chats ADD COLUMN IF NOT EXISTS visitor_phone VARCHAR(50)`;
+  } catch (e) {
+    // Column may already exist, ignore
+  }
 
   console.log("✅ Database tables initialized");
 }

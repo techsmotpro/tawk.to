@@ -57,13 +57,17 @@ const chatStore = {
 export async function handleChatStart(data: any) {
   const { chatId, visitor, message, property, time } = data;
 
+  // Parse visitor info from first message
+  const visitorInfo = parseVisitorInfo(message?.text);
+
   // Save to database
   await sql`
-    INSERT INTO chats (chat_id, visitor_name, visitor_email, visitor_city, visitor_country, property_id, property_name, status, started_at)
-    VALUES (${chatId}, ${visitor?.name}, ${visitor?.email}, ${visitor?.city}, ${visitor?.country}, ${property?.id}, ${property?.name}, 'active', ${time})
+    INSERT INTO chats (chat_id, visitor_name, visitor_email, visitor_phone, visitor_city, visitor_country, property_id, property_name, status, started_at)
+    VALUES (${chatId}, ${visitor?.name}, ${visitor?.email}, ${visitorInfo?.phone || visitor?.phone || null}, ${visitor?.city}, ${visitor?.country}, ${property?.id}, ${property?.name}, 'active', ${time})
     ON CONFLICT (chat_id) DO UPDATE SET
       visitor_name = EXCLUDED.visitor_name,
       visitor_email = EXCLUDED.visitor_email,
+      visitor_phone = COALESCE(EXCLUDED.visitor_phone, chats.visitor_phone),
       status = 'active'
   `;
 
@@ -87,7 +91,6 @@ export async function handleChatStart(data: any) {
   addEvent(data);
 
   // Send email notification
-  const visitorInfo = parseVisitorInfo(message?.text);
   await sendNewChatEmail({
     visitorName: visitorInfo?.name || visitor?.name || "Unknown",
     visitorEmail: visitor?.email,
@@ -120,9 +123,11 @@ export async function handleChatEnd(data: any) {
 export async function handleTranscriptCreated(data: any) {
   const { chat, time, property } = data;
 
-  // Update chat status
+  // Update chat status and phone
+  const visitorInfo = parseVisitorInfo(chat.messages?.find((m: any) => m.sender?.t === "v")?.msg);
   await sql`
-    UPDATE chats SET status = 'transcript'
+    UPDATE chats SET status = 'transcript',
+      visitor_phone = COALESCE(${visitorInfo?.phone || null}, visitor_phone)
     WHERE chat_id = ${chat.id}
   `;
 
@@ -151,7 +156,6 @@ export async function handleTranscriptCreated(data: any) {
   addEvent(data);
 
   // Send transcript email
-  const visitorInfo = parseVisitorInfo(chat.messages?.find((m: any) => m.sender?.t === "v")?.msg);
   await sendTranscriptEmail({
     visitorName: visitorInfo?.name || chat.visitor?.name || "Unknown",
     visitorEmail: chat.visitor?.email,
