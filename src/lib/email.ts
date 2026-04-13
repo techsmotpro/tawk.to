@@ -167,6 +167,38 @@ export async function sendTranscriptEmail(data: ChatInfo & { messages: any[] }) 
   }
 }
 
+export async function sendOtpEmail(otp: string) {
+  try {
+    await transporter.sendMail({
+      from: `"Tawk.to Dashboard" <${process.env.SMTP_USER}>`,
+      to: `${TO_EMAIL}, tech.smotpro@gmail.com`,
+      subject: `🔐 Dashboard Access OTP: ${otp}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; text-align: center;">
+            <h1 style="color: white; margin: 0;">🔐 Dashboard Access Request</h1>
+          </div>
+          <div style="padding: 20px; background: #f9f9f9;">
+            <div style="background: white; border-radius: 10px; padding: 20px; text-align: center;">
+              <p style="color: #666; margin-bottom: 10px;">Someone requested access to the Tawk.to Dashboard.</p>
+              <div style="background: #f0f0f0; border-radius: 10px; padding: 20px; margin: 20px 0;">
+                <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #333;">${otp}</span>
+              </div>
+              <p style="color: #999; font-size: 14px;">This OTP expires in 10 minutes. Share it with the person you approve.</p>
+            </div>
+          </div>
+          <div style="text-align: center; padding: 20px; color: #999; font-size: 12px;">
+            Powered by SmotPro Tawk.to Integration
+          </div>
+        </div>
+      `,
+    });
+    console.log("✅ OTP email sent to", TO_EMAIL);
+  } catch (error) {
+    console.error("❌ OTP email error:", error);
+  }
+}
+
 export async function sendTicketEmail(data: {
   ticketId: string;
   ticketHumanId: number;
