@@ -220,13 +220,10 @@ function addEvent(data: any) {
 
 // Auto-expire chats that have been "active" for more than 10 minutes
 async function expireStaleChats() {
-  const result = await sql`
+  await sql`
     UPDATE chats SET status = 'ended', ended_at = NOW()
     WHERE status = 'active' AND started_at < NOW() - INTERVAL '10 minutes'
   `;
-  if (result.count > 0) {
-    console.log(`⏰ Auto-expired ${result.count} stale chat(s)`);
-  }
 }
 
 // Get all data from DB
