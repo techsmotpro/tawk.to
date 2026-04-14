@@ -218,8 +218,22 @@ function addEvent(data: any) {
   if (chatStore.events.length > 100) chatStore.events.pop();
 }
 
+// Auto-expire chats that have been "active" for more than 10 minutes
+async function expireStaleChats() {
+  const result = await sql`
+    UPDATE chats SET status = 'ended', ended_at = NOW()
+    WHERE status = 'active' AND started_at < NOW() - INTERVAL '10 minutes'
+  `;
+  if (result.count > 0) {
+    console.log(`⏰ Auto-expired ${result.count} stale chat(s)`);
+  }
+}
+
 // Get all data from DB
 export async function getData() {
+  // Auto-expire stale active chats before fetching
+  await expireStaleChats();
+
   const activeChats = await sql`
     SELECT * FROM chats WHERE status = 'active' ORDER BY started_at DESC
   `;
