@@ -113,8 +113,8 @@ export default function Dashboard() {
       // Single date filter (existing)
       const dateMatch =
         selectedDate === "" ||
-        new Date(t.created_at).toLocaleDateString("en-US") ===
-          new Date(selectedDate).toLocaleDateString("en-US");
+        new Date(t.created_at).toLocaleDateString("en-GB") ===
+          new Date(selectedDate).toLocaleDateString("en-GB");
 
       // Date range filter
       const chatDate = new Date(t.created_at);
@@ -127,17 +127,17 @@ export default function Dashboard() {
 
   const formatTime = (time: string) => {
     if (!time) return "";
-    return new Date(time).toLocaleString("en-US");
+    return new Date(time).toLocaleString("en-GB");
   };
 
   const formatDate = (time: string) => {
     if (!time) return "";
-    return new Date(time).toLocaleDateString("en-US");
+    return new Date(time).toLocaleDateString("en-GB");
   };
 
   const formatShortTime = (time: string) => {
     if (!time) return "";
-    return new Date(time).toLocaleTimeString("en-US", {
+    return new Date(time).toLocaleTimeString("en-GB", {
       hour: "2-digit",
       minute: "2-digit",
     });
