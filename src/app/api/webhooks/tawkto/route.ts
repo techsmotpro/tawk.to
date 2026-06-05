@@ -50,11 +50,12 @@ function verifySignature(body: string, signature: string): boolean {
   return false;
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   await ensureDbInit();
 
   try {
-    const data = await getData();
+    const offset = parseInt(req.nextUrl.searchParams.get("offset") ?? "0", 10);
+    const data = await getData(isNaN(offset) ? 0 : offset);
     return NextResponse.json(data);
   } catch (e) {
     console.error("GET error:", e);

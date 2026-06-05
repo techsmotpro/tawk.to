@@ -226,8 +226,10 @@ async function expireStaleChats() {
   `;
 }
 
+const PAGE_SIZE = 100;
+
 // Get all data from DB
-export async function getData() {
+export async function getData(offset = 0) {
   // Auto-expire stale active chats before fetching
   await expireStaleChats();
 
@@ -249,7 +251,7 @@ export async function getData() {
     WHERE c.status IN ('transcript', 'ended')
     GROUP BY c.id
     ORDER BY c.ended_at DESC NULLS LAST
-    LIMIT 50
+    LIMIT ${PAGE_SIZE} OFFSET ${offset}
   `;
 
   // Get messages for each transcript
@@ -259,9 +261,17 @@ export async function getData() {
     `;
   }
 
+  const totalRow = await sql`
+    SELECT COUNT(*) as total FROM chats WHERE status IN ('transcript', 'ended')
+  `;
+  const total = Number(totalRow[0]?.total ?? 0);
+
   return {
     activeChats,
     transcripts,
+    total,
+    offset,
+    pageSize: PAGE_SIZE,
   };
 }
 
