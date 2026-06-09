@@ -51,6 +51,25 @@ export async function initDb() {
     )
   `;
 
+  // Sales leads: one row per chat, edited by the Sales Admin
+  await sql`
+    CREATE TABLE IF NOT EXISTS sales_leads (
+      id SERIAL PRIMARY KEY,
+      chat_id VARCHAR(255) UNIQUE NOT NULL REFERENCES chats(chat_id),
+      edited_name VARCHAR(255),
+      edited_phone VARCHAR(50),
+      edited_info TEXT,
+      status VARCHAR(50) DEFAULT 'New',
+      converted BOOLEAN DEFAULT FALSE,
+      premium_amount NUMERIC(12, 2),
+      premium_collected BOOLEAN DEFAULT FALSE,
+      updated_in_crm BOOLEAN DEFAULT FALSE,
+      remarks TEXT,
+      updated_by VARCHAR(255),
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    )
+  `;
+
   // Add visitor_phone column if it doesn't exist (migration for existing DBs)
   try {
     await sql`ALTER TABLE chats ADD COLUMN IF NOT EXISTS visitor_phone VARCHAR(50)`;

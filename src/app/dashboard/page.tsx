@@ -18,6 +18,20 @@ interface DbChat {
   created_at: string;
   message_count?: string;
   messages?: DbMessage[];
+  sales?: SalesLead | null;
+}
+
+interface SalesLead {
+  chat_id: string;
+  edited_name: string | null;
+  edited_phone: string | null;
+  edited_info: string | null;
+  status: string;
+  converted: boolean;
+  premium_amount: string | null;
+  premium_collected: boolean;
+  updated_in_crm: boolean;
+  remarks: string | null;
 }
 
 interface DbMessage {
@@ -39,6 +53,14 @@ interface Data {
   pageSize: number;
 }
 
+const SALES_STATUS_COLORS: Record<string, string> = {
+  New: "bg-gray-100 text-gray-700",
+  Contacted: "bg-blue-100 text-blue-700",
+  "Follow-up": "bg-yellow-100 text-yellow-700",
+  Converted: "bg-green-100 text-green-700",
+  Lost: "bg-red-100 text-red-700",
+};
+
 export default function Dashboard() {
   const [activeChats, setActiveChats] = useState<DbChat[]>([]);
   const [transcripts, setTranscripts] = useState<DbChat[]>([]);
@@ -47,6 +69,7 @@ export default function Dashboard() {
   const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [lastUpdate, setLastUpdate] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProperty, setSelectedProperty] = useState<string>("all");
@@ -96,8 +119,8 @@ export default function Dashboard() {
     return Array.from(props);
   }, [transcripts, activeChats]);
 
-  const filteredTranscripts = useMemo(() => {
-    return transcripts.filter((t) => {
+  const matchesFilters = useCallback(
+    (t: DbChat) => {
       const searchMatch =
         searchQuery === "" ||
         t.visitor_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -122,12 +145,18 @@ export default function Dashboard() {
       const toMatch = dateTo === "" || chatDate <= new Date(dateTo + "T23:59:59");
 
       return searchMatch && propertyMatch && dateMatch && fromMatch && toMatch;
-    });
-  }, [transcripts, searchQuery, selectedProperty, selectedDate, dateFrom, dateTo]);
+    },
+    [searchQuery, selectedProperty, selectedDate, dateFrom, dateTo]
+  );
+
+  const filteredTranscripts = useMemo(
+    () => transcripts.filter(matchesFilters),
+    [transcripts, matchesFilters]
+  );
 
   const formatTime = (time: string) => {
     if (!time) return "";
-    return new Date(time).toLocaleString("en-GB");
+    return new Date(time).toLocaleString("en-GB", { hour12: true });
   };
 
   const formatDate = (time: string) => {
@@ -140,6 +169,7 @@ export default function Dashboard() {
     return new Date(time).toLocaleTimeString("en-GB", {
       hour: "2-digit",
       minute: "2-digit",
+      hour12: true,
     });
   };
 
@@ -185,8 +215,8 @@ export default function Dashboard() {
     setDateTo("");
   };
 
-  const downloadExcel = () => {
-    const rows = filteredTranscripts.map((t) => {
+  const buildCsv = (chats: DbChat[]) => {
+    const rows = chats.map((t) => {
       const info = parseVisitorInfo(t.messages);
       const conversation = t.messages
         ?.map((m) => {
@@ -194,20 +224,33 @@ export default function Dashboard() {
           return `[${formatShortTime(m.sent_at)}] ${who}: ${m.message_text}`;
         })
         .join(" | ") || "";
+      const s = t.sales;
       return [
         t.property_name || "",
         formatTime(t.created_at),
-        info?.name || t.visitor_name || "",
-        info?.phone || t.visitor_phone || "",
+        s?.edited_name || info?.name || t.visitor_name || "",
+        s?.edited_phone || info?.phone || t.visitor_phone || "",
         t.visitor_email || "",
         `${t.visitor_city || ""}, ${t.visitor_country || ""}`,
         info?.location || "",
+        // Sales team fields
+        s?.status || "",
+        s?.converted ? "Yes" : "No",
+        s?.premium_amount != null ? s.premium_amount : "",
+        s?.premium_collected ? "Yes" : "No",
+        s?.updated_in_crm ? "Yes" : "No",
+        s?.edited_info || "",
+        s?.remarks || "",
         t.messages?.length || 0,
         conversation,
       ];
     });
 
-    const header = ["Property", "Date & Time", "Name", "Phone", "Email", "Location", "Visitor Location", "Message Count", "Conversation"];
+    const header = [
+      "Property", "Date & Time", "Name", "Phone", "Email", "Location", "Visitor Location",
+      "Sales Status", "Converted", "Premium Amount", "Premium Collected", "Updated in CRM", "Other Info", "Remarks",
+      "Message Count", "Conversation",
+    ];
     const csvContent = [header, ...rows]
       .map((row) =>
         row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")
@@ -222,6 +265,29 @@ export default function Dashboard() {
     a.download = `chats_${label}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  // Fetch the ENTIRE dataset from the server (not just loaded pages),
+  // apply the active filters, then export everything to CSV.
+  const downloadExcel = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const res = await fetch("/api/export");
+      if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+      const json: { transcripts: DbChat[] } = await res.json();
+      const allFiltered = (json.transcripts || []).filter(matchesFilters);
+      if (allFiltered.length === 0) {
+        alert("No chats match the current filters.");
+        return;
+      }
+      buildCsv(allFiltered);
+    } catch (e) {
+      console.error("Export failed", e);
+      alert("Export failed. Please try again.");
+    } finally {
+      setExporting(false);
+    }
   };
 
   if (loading) {
@@ -252,6 +318,12 @@ export default function Dashboard() {
               <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
                 {total} Chats
               </span>
+              <a
+                href="/sales"
+                className="px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-sm font-medium hover:bg-emerald-200 transition-colors cursor-pointer"
+              >
+                Sales Admin
+              </a>
               <button
                 onClick={async () => {
                   await fetch("/api/auth/logout", { method: "POST" });
@@ -397,12 +469,13 @@ export default function Dashboard() {
             <h2 className="text-lg font-semibold text-black">
               Chat History ({hasAnyFilter ? `${filteredTranscripts.length} filtered` : `${transcripts.length} of ${total}`})
             </h2>
-            {filteredTranscripts.length > 0 && (
+            {total > 0 && (
               <button
                 onClick={downloadExcel}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors text-sm"
+                disabled={exporting}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors text-sm"
               >
-                ⬇ Download Excel ({filteredTranscripts.length})
+                {exporting ? "⏳ Preparing…" : `⬇ Download Excel (all${hasAnyFilter ? " filtered" : ""})`}
               </button>
             )}
           </div>
@@ -428,13 +501,32 @@ export default function Dashboard() {
                       </div>
                     </div>
                     <div className="p-4">
+                      {transcript.sales && (
+                        <div className="mb-3 flex flex-wrap gap-1.5">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${SALES_STATUS_COLORS[transcript.sales.status] || SALES_STATUS_COLORS.New}`}>
+                            {transcript.sales.status}
+                          </span>
+                          {transcript.sales.converted && (
+                            <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-green-100 text-green-700">✓ Converted</span>
+                          )}
+                          {transcript.sales.premium_collected && (
+                            <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700">💰 Collected</span>
+                          )}
+                          {transcript.sales.updated_in_crm && (
+                            <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700">CRM ✓</span>
+                          )}
+                          {transcript.sales.premium_amount != null && (
+                            <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-700">₹{transcript.sales.premium_amount}</span>
+                          )}
+                        </div>
+                      )}
                       <div className="mb-3">
                         <span className="text-xs text-gray-500 uppercase tracking-wide">Name</span>
-                        <div className="text-black font-semibold text-lg">{visitorInfo?.name || transcript.visitor_name || "Not provided"}</div>
+                        <div className="text-black font-semibold text-lg">{transcript.sales?.edited_name || visitorInfo?.name || transcript.visitor_name || "Not provided"}</div>
                       </div>
                       <div className="mb-3">
                         <span className="text-xs text-gray-500 uppercase tracking-wide">Phone</span>
-                        <div className="text-black font-medium">{visitorInfo?.phone || transcript.visitor_phone || "Not provided"}</div>
+                        <div className="text-black font-medium">{transcript.sales?.edited_phone || visitorInfo?.phone || transcript.visitor_phone || "Not provided"}</div>
                       </div>
                       <div className="mb-3">
                         <span className="text-xs text-gray-500 uppercase tracking-wide">Location</span>

@@ -1,5 +1,6 @@
 import { sql } from "./db";
 import { sendNewChatEmail, sendTranscriptEmail, sendTicketEmail } from "./email";
+import { attachSalesLeads } from "./sales";
 
 // Parse visitor info from message text (Name, Phone, Location)
 function parseVisitorInfo(messageText?: string) {
@@ -268,11 +269,48 @@ export async function getData(offset = 0) {
 
   return {
     activeChats,
-    transcripts,
+    transcripts: await attachSalesLeads(transcripts),
     total,
     offset,
     pageSize: PAGE_SIZE,
   };
+}
+
+// Get ALL transcripts (no pagination) for full export.
+// Uses 2 queries total instead of one-per-chat, so it scales to large datasets.
+export async function getAllTranscripts() {
+  const transcripts = await sql`
+    SELECT c.*, COUNT(m.id) as message_count
+    FROM chats c
+    LEFT JOIN messages m ON c.chat_id = m.chat_id
+    WHERE c.status IN ('transcript', 'ended')
+    GROUP BY c.id
+    ORDER BY c.ended_at DESC NULLS LAST
+  `;
+
+  if (transcripts.length === 0) {
+    return { transcripts, total: 0 };
+  }
+
+  // Batch-load every message for these chats in one query
+  const chatIds = transcripts.map((t) => t.chat_id);
+  const allMessages = await sql`
+    SELECT * FROM messages
+    WHERE chat_id = ANY(${chatIds})
+    ORDER BY sent_at ASC
+  `;
+
+  const byChat = new Map<string, unknown[]>();
+  for (const m of allMessages) {
+    const arr = byChat.get(m.chat_id) ?? [];
+    arr.push(m);
+    byChat.set(m.chat_id, arr);
+  }
+  for (const t of transcripts) {
+    t.messages = byChat.get(t.chat_id) ?? [];
+  }
+
+  return { transcripts: await attachSalesLeads(transcripts), total: transcripts.length };
 }
 
 // Export memory store for backwards compatibility
