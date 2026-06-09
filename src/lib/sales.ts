@@ -6,6 +6,7 @@ export const SALES_STATUSES = [
   "Follow-up",
   "Converted",
   "Lost",
+  "Double Entry",
 ] as const;
 
 export type SalesStatus = (typeof SALES_STATUSES)[number];

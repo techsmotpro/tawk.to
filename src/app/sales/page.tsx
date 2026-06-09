@@ -36,7 +36,7 @@ interface Data {
   pageSize: number;
 }
 
-const STATUSES = ["New", "Contacted", "Follow-up", "Converted", "Lost"];
+const STATUSES = ["New", "Contacted", "Follow-up", "Converted", "Lost", "Double Entry"];
 
 const STATUS_COLORS: Record<string, string> = {
   New: "bg-gray-100 text-gray-700",
@@ -44,6 +44,7 @@ const STATUS_COLORS: Record<string, string> = {
   "Follow-up": "bg-yellow-100 text-yellow-700",
   Converted: "bg-green-100 text-green-700",
   Lost: "bg-red-100 text-red-700",
+  "Double Entry": "bg-orange-100 text-orange-700",
 };
 
 interface FormState {
