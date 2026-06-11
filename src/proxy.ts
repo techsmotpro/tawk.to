@@ -11,8 +11,8 @@ export function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Allow auth API routes (dashboard + sales admin OTP flows)
-  if (pathname.startsWith("/api/auth/") || pathname.startsWith("/api/sales-auth/")) {
+  // Allow auth API routes (dashboard OTP flow)
+  if (pathname.startsWith("/api/auth/")) {
     return NextResponse.next();
   }
 
@@ -26,22 +26,11 @@ export function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Check session cookie for everything else
+  // Check session cookie for everything else (sales admin included —
+  // the main dashboard login is the only gate now).
   const session = req.cookies.get("dash_session");
   if (!session) {
     return NextResponse.redirect(new URL("/login", req.url));
-  }
-
-  // Sales admin area requires an extra OTP gate (sales_session).
-  // The /sales/login page itself only needs the normal dashboard session.
-  const isSalesArea =
-    (pathname.startsWith("/sales") && pathname !== "/sales/login") ||
-    pathname.startsWith("/api/sales/");
-  if (isSalesArea && req.cookies.get("sales_session")?.value !== "true") {
-    if (pathname.startsWith("/api/")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    return NextResponse.redirect(new URL("/sales/login", req.url));
   }
 
   return NextResponse.next();

@@ -17,9 +17,9 @@ async function ensureDbInit() {
 }
 
 export async function POST(req: Request) {
-  // Only the sales admin (extra OTP gate) may write
+  // The main dashboard session (enforced by the proxy) is the only gate.
   const cookieStore = await cookies();
-  if (cookieStore.get("sales_session")?.value !== "true") {
+  if (!cookieStore.get("dash_session")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

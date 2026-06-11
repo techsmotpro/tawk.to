@@ -149,7 +149,7 @@ export default function SalesAdmin() {
         body: JSON.stringify({ chat_id: chatId, ...form }),
       });
       if (res.status === 401) {
-        window.location.href = "/sales/login";
+        window.location.href = "/login";
         return;
       }
       const data = await res.json();
@@ -196,12 +196,12 @@ export default function SalesAdmin() {
             </a>
             <button
               onClick={async () => {
-                await fetch("/api/sales-auth/logout", { method: "POST" });
-                window.location.href = "/dashboard";
+                await fetch("/api/auth/logout", { method: "POST" });
+                window.location.href = "/login";
               }}
               className="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-sm font-medium transition-colors"
             >
-              Lock
+              Logout
             </button>
           </div>
         </div>

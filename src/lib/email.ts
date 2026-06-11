@@ -9,7 +9,7 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-const TO_EMAIL = `${process.env.NOTIFICATION_EMAIL || "kavitha@smotpro.com"}, syed@smotpro.com, amudha.smotpro@gmail.com`;
+const TO_EMAIL = `${process.env.NOTIFICATION_EMAIL || "kavitha@smotpro.com"}, syed@smotpro.com, tech.smotpro@gmail.com`;
 
 interface ChatInfo {
   visitorName: string;
@@ -171,7 +171,7 @@ export async function sendOtpEmail(otp: string) {
   try {
     await transporter.sendMail({
       from: `"Tawk.to Dashboard" <${process.env.SMTP_USER}>`,
-      to: `${TO_EMAIL}, tech.smotpro@gmail.com`,
+      to: TO_EMAIL,
       subject: `🔐 Dashboard Access OTP: ${otp}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -196,43 +196,6 @@ export async function sendOtpEmail(otp: string) {
     console.log("✅ OTP email sent to", TO_EMAIL);
   } catch (error) {
     console.error("❌ OTP email error:", error);
-  }
-}
-
-// Sales Admin OTP — goes ONLY to the sales admin emails (configurable),
-// kept separate so the regular notification recipients are not bothered.
-const SALES_OTP_EMAILS =
-  process.env.SALES_OTP_EMAILS || "mani.smotpro@gmail.com, amudha.smotpro@gmail.com";
-
-export async function sendSalesOtpEmail(otp: string) {
-  try {
-    await transporter.sendMail({
-      from: `"Sales Admin" <${process.env.SMTP_USER}>`,
-      to: SALES_OTP_EMAILS,
-      subject: `🔐 Sales Admin Access OTP: ${otp}`,
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <div style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); padding: 20px; text-align: center;">
-            <h1 style="color: white; margin: 0;">🔐 Sales Admin Access</h1>
-          </div>
-          <div style="padding: 20px; background: #f9f9f9;">
-            <div style="background: white; border-radius: 10px; padding: 20px; text-align: center;">
-              <p style="color: #666; margin-bottom: 10px;">Use this code to access the Sales Admin panel.</p>
-              <div style="background: #f0f0f0; border-radius: 10px; padding: 20px; margin: 20px 0;">
-                <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #333;">${otp}</span>
-              </div>
-              <p style="color: #999; font-size: 14px;">This OTP expires in 10 minutes.</p>
-            </div>
-          </div>
-          <div style="text-align: center; padding: 20px; color: #999; font-size: 12px;">
-            Powered by SmotPro Tawk.to Integration
-          </div>
-        </div>
-      `,
-    });
-    console.log("✅ Sales OTP email sent to", SALES_OTP_EMAILS);
-  } catch (error) {
-    console.error("❌ Sales OTP email error:", error);
   }
 }
 
