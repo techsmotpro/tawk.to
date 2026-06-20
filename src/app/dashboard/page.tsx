@@ -45,6 +45,15 @@ interface DbMessage {
   created_at: string;
 }
 
+interface ChatNote {
+  id: number;
+  chat_id: string;
+  note_type: string;
+  amount: number | null;
+  note: string;
+  created_at: string;
+}
+
 interface Data {
   activeChats: DbChat[];
   transcripts: DbChat[];
@@ -77,6 +86,11 @@ export default function Dashboard() {
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
+  const [editingChatId, setEditingChatId] = useState<string | null>(null);
+  const [historyOpenIds, setHistoryOpenIds] = useState<Set<string>>(new Set());
+  const [notesCache, setNotesCache] = useState<Record<string, ChatNote[]>>({});
+  const [editForm, setEditForm] = useState({ note_type: "info", amount: "", note: "" });
+  const [savingNote, setSavingNote] = useState(false);
 
   const fetchData = useCallback(async (currentOffset = 0, append = false) => {
     try {
@@ -234,7 +248,6 @@ export default function Dashboard() {
         t.visitor_email || "",
         `${t.visitor_city || ""}, ${t.visitor_country || ""}`,
         info?.location || "",
-        // Sales team fields
         s?.status || "",
         s?.converted ? "Yes" : "No",
         s?.premium_amount != null ? s.premium_amount : "",
@@ -268,8 +281,6 @@ export default function Dashboard() {
     URL.revokeObjectURL(url);
   };
 
-  // Fetch the ENTIRE dataset from the server (not just loaded pages),
-  // apply the active filters, then export everything to CSV.
   const downloadExcel = async () => {
     if (exporting) return;
     setExporting(true);
@@ -288,6 +299,70 @@ export default function Dashboard() {
       alert("Export failed. Please try again.");
     } finally {
       setExporting(false);
+    }
+  };
+
+  const noteTypeIcon = (type: string) => {
+    const icons: Record<string, string> = {
+      payment: "💰", followup: "📅", called: "📞",
+      info: "📝", closed: "✅", not_interested: "❌",
+    };
+    return icons[type] || "📝";
+  };
+
+  const formatShortDate = (time: string) => {
+    if (!time) return "";
+    const d = new Date(time);
+    return d.toLocaleDateString([], { month: "short", day: "numeric" }) +
+      " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  };
+
+  const fetchNotes = async (chatId: string) => {
+    if (notesCache[chatId] !== undefined) return;
+    const res = await fetch(`/api/notes?chat_id=${chatId}`);
+    const { notes } = await res.json();
+    setNotesCache(prev => ({ ...prev, [chatId]: notes }));
+  };
+
+  const openEdit = async (chatId: string) => {
+    if (editingChatId === chatId) {
+      setEditingChatId(null);
+      return;
+    }
+    setEditingChatId(chatId);
+    setEditForm({ note_type: "info", amount: "", note: "" });
+    await fetchNotes(chatId);
+  };
+
+  const toggleHistory = async (chatId: string) => {
+    await fetchNotes(chatId);
+    setHistoryOpenIds(prev => {
+      const next = new Set(prev);
+      if (next.has(chatId)) next.delete(chatId); else next.add(chatId);
+      return next;
+    });
+  };
+
+  const saveNote = async (chatId: string) => {
+    if (!editForm.note.trim()) return;
+    setSavingNote(true);
+    try {
+      const res = await fetch("/api/notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          note_type: editForm.note_type,
+          amount: editForm.note_type === "payment" && editForm.amount ? parseInt(editForm.amount) : null,
+          note: editForm.note,
+        }),
+      });
+      const { note } = await res.json();
+      setNotesCache(prev => ({ ...prev, [chatId]: [...(prev[chatId] || []), note] }));
+      setEditForm({ note_type: "info", amount: "", note: "" });
+      setHistoryOpenIds(prev => { const next = new Set(prev); next.add(chatId); return next; });
+    } finally {
+      setSavingNote(false);
     }
   };
 
@@ -456,6 +531,87 @@ export default function Dashboard() {
                       <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
                         Started: {formatTime(chat.started_at)}
                       </div>
+
+                      {/* Edit Panel */}
+                      <div className="mt-3 pt-3 border-t border-gray-200">
+                        <button
+                          onClick={() => openEdit(chat.chat_id)}
+                          className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
+                        >
+                          ✏️ {editingChatId === chat.chat_id ? "Close Edit" : "Edit"}
+                        </button>
+
+                        {editingChatId === chat.chat_id && (
+                          <div className="mt-3 space-y-2">
+                            <select
+                              value={editForm.note_type}
+                              onChange={e => setEditForm(f => ({ ...f, note_type: e.target.value }))}
+                              className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm text-black bg-white"
+                            >
+                              <option value="info">📝 Info</option>
+                              <option value="payment">💰 Payment</option>
+                              <option value="followup">📅 Follow-up</option>
+                              <option value="called">📞 Called</option>
+                              <option value="closed">✅ Closed</option>
+                              <option value="not_interested">❌ Not Interested</option>
+                            </select>
+
+                            {editForm.note_type === "payment" && (
+                              <input
+                                type="number"
+                                placeholder="Amount (₹)"
+                                value={editForm.amount}
+                                onChange={e => setEditForm(f => ({ ...f, amount: e.target.value }))}
+                                className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm text-black"
+                              />
+                            )}
+
+                            <textarea
+                              placeholder="Add a note..."
+                              value={editForm.note}
+                              onChange={e => setEditForm(f => ({ ...f, note: e.target.value }))}
+                              rows={2}
+                              className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm text-black resize-none"
+                            />
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => saveNote(chat.chat_id)}
+                                disabled={savingNote || !editForm.note.trim()}
+                                className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-40 hover:bg-blue-700 transition-colors"
+                              >
+                                {savingNote ? "Saving…" : "Save"}
+                              </button>
+                              <button
+                                onClick={() => toggleHistory(chat.chat_id)}
+                                className="px-4 py-1.5 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+                              >
+                                📋 History{notesCache[chat.chat_id]?.length ? ` (${notesCache[chat.chat_id].length})` : ""}
+                              </button>
+                            </div>
+
+                            {historyOpenIds.has(chat.chat_id) && (
+                              <div className="mt-1 space-y-1.5 max-h-44 overflow-y-auto">
+                                {(notesCache[chat.chat_id] || []).length === 0 ? (
+                                  <p className="text-xs text-gray-400 text-center py-3">No history yet</p>
+                                ) : (
+                                  (notesCache[chat.chat_id] || []).map(n => (
+                                    <div key={n.id} className="bg-gray-50 rounded-lg p-2 text-xs">
+                                      <div className="flex items-center gap-1.5 mb-0.5">
+                                        <span>{noteTypeIcon(n.note_type)}</span>
+                                        <span className="font-medium text-gray-700 capitalize">{n.note_type.replace("_", " ")}</span>
+                                        {n.amount && <span className="text-green-600 font-semibold">₹{n.amount}</span>}
+                                        <span className="text-gray-400 ml-auto">{formatShortDate(n.created_at)}</span>
+                                      </div>
+                                      <p className="text-gray-800">{n.note}</p>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -559,6 +715,87 @@ export default function Dashboard() {
                           </div>
                         </div>
                       )}
+
+                      {/* Edit Panel */}
+                      <div className="mt-3 pt-3 border-t border-gray-200">
+                        <button
+                          onClick={() => openEdit(transcript.chat_id)}
+                          className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
+                        >
+                          ✏️ {editingChatId === transcript.chat_id ? "Close Edit" : "Edit"}
+                        </button>
+
+                        {editingChatId === transcript.chat_id && (
+                          <div className="mt-3 space-y-2">
+                            <select
+                              value={editForm.note_type}
+                              onChange={e => setEditForm(f => ({ ...f, note_type: e.target.value }))}
+                              className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm text-black bg-white"
+                            >
+                              <option value="info">📝 Info</option>
+                              <option value="payment">💰 Payment</option>
+                              <option value="followup">📅 Follow-up</option>
+                              <option value="called">📞 Called</option>
+                              <option value="closed">✅ Closed</option>
+                              <option value="not_interested">❌ Not Interested</option>
+                            </select>
+
+                            {editForm.note_type === "payment" && (
+                              <input
+                                type="number"
+                                placeholder="Amount (₹)"
+                                value={editForm.amount}
+                                onChange={e => setEditForm(f => ({ ...f, amount: e.target.value }))}
+                                className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm text-black"
+                              />
+                            )}
+
+                            <textarea
+                              placeholder="Add a note..."
+                              value={editForm.note}
+                              onChange={e => setEditForm(f => ({ ...f, note: e.target.value }))}
+                              rows={2}
+                              className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm text-black resize-none"
+                            />
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => saveNote(transcript.chat_id)}
+                                disabled={savingNote || !editForm.note.trim()}
+                                className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-40 hover:bg-blue-700 transition-colors"
+                              >
+                                {savingNote ? "Saving…" : "Save"}
+                              </button>
+                              <button
+                                onClick={() => toggleHistory(transcript.chat_id)}
+                                className="px-4 py-1.5 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+                              >
+                                📋 History{notesCache[transcript.chat_id]?.length ? ` (${notesCache[transcript.chat_id].length})` : ""}
+                              </button>
+                            </div>
+
+                            {historyOpenIds.has(transcript.chat_id) && (
+                              <div className="mt-1 space-y-1.5 max-h-44 overflow-y-auto">
+                                {(notesCache[transcript.chat_id] || []).length === 0 ? (
+                                  <p className="text-xs text-gray-400 text-center py-3">No history yet</p>
+                                ) : (
+                                  (notesCache[transcript.chat_id] || []).map(n => (
+                                    <div key={n.id} className="bg-gray-50 rounded-lg p-2 text-xs">
+                                      <div className="flex items-center gap-1.5 mb-0.5">
+                                        <span>{noteTypeIcon(n.note_type)}</span>
+                                        <span className="font-medium text-gray-700 capitalize">{n.note_type.replace("_", " ")}</span>
+                                        {n.amount && <span className="text-green-600 font-semibold">₹{n.amount}</span>}
+                                        <span className="text-gray-400 ml-auto">{formatShortDate(n.created_at)}</span>
+                                      </div>
+                                      <p className="text-gray-800">{n.note}</p>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );

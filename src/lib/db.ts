@@ -70,6 +70,17 @@ export async function initDb() {
     )
   `;
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS chat_notes (
+      id SERIAL PRIMARY KEY,
+      chat_id VARCHAR(255) REFERENCES chats(chat_id),
+      note_type VARCHAR(50) DEFAULT 'info',
+      amount INTEGER,
+      note TEXT NOT NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    )
+  `;
+
   // Add visitor_phone column if it doesn't exist (migration for existing DBs)
   try {
     await sql`ALTER TABLE chats ADD COLUMN IF NOT EXISTS visitor_phone VARCHAR(50)`;
