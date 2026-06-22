@@ -20,11 +20,17 @@ function getDismissed(): Record<string, string> {
 }
 function saveDismiss(chatId: string, followupAt: string) {
   const prev = getDismissed();
-  prev[chatId] = followupAt;
+  prev[chatId] = new Date(followupAt).toISOString(); // normalize before storing
   localStorage.setItem(STORAGE_KEY, JSON.stringify(prev));
 }
 function isDismissed(chatId: string, followupAt: string) {
-  return getDismissed()[chatId] === followupAt;
+  const stored = getDismissed()[chatId];
+  if (!stored) return false;
+  try {
+    return new Date(stored).getTime() === new Date(followupAt).getTime();
+  } catch {
+    return stored === followupAt;
+  }
 }
 
 function playChime() {
