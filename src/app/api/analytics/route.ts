@@ -82,11 +82,11 @@ export async function GET() {
       LIMIT 10
     `,
 
-    // Revenue: converted leads + total collected
+    // Revenue: converted leads + all pipeline + collected
     sql`
       SELECT
         COUNT(*) FILTER (WHERE converted = true)::int AS converted_count,
-        COALESCE(SUM(premium_amount) FILTER (WHERE converted = true), 0)::numeric AS total_revenue,
+        COALESCE(SUM(premium_amount), 0)::numeric AS total_revenue,
         COALESCE(SUM(premium_amount) FILTER (WHERE premium_collected = true), 0)::numeric AS collected_revenue
       FROM sales_leads
     `,

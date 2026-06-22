@@ -137,7 +137,7 @@ export default function AnalyticsPage() {
               sub="leads"
             />
             <StatCard
-              label="Revenue"
+              label="Pipeline"
               value={fmtCurrency(data.revenue.total_revenue)}
               sub={`${fmtCurrency(data.revenue.collected_revenue)} collected`}
             />
