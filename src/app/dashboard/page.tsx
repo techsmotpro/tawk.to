@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
+import FollowupBell from "@/components/FollowupBell";
 
 interface DbChat {
   id: number;
@@ -45,13 +46,20 @@ interface DbMessage {
   created_at: string;
 }
 
-interface ChatNote {
+interface LeadHistory {
   id: number;
   chat_id: string;
-  note_type: string;
-  amount: number | null;
-  note: string;
-  created_at: string;
+  edited_name: string | null;
+  edited_phone: string | null;
+  edited_info: string | null;
+  status: string;
+  converted: boolean;
+  premium_amount: string | null;
+  premium_collected: boolean;
+  updated_in_crm: boolean;
+  remarks: string | null;
+  updated_by: string | null;
+  saved_at: string;
 }
 
 interface Data {
@@ -86,21 +94,18 @@ export default function Dashboard() {
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
-  const [editingChatId, setEditingChatId] = useState<string | null>(null);
   const [historyOpenIds, setHistoryOpenIds] = useState<Set<string>>(new Set());
-  const [notesCache, setNotesCache] = useState<Record<string, ChatNote[]>>({});
-  const [editForm, setEditForm] = useState({ note_type: "info", amount: "", note: "" });
-  const [savingNote, setSavingNote] = useState(false);
+  const [historyCache, setHistoryCache] = useState<Record<string, LeadHistory[]>>({});
 
   const fetchData = useCallback(async (currentOffset = 0, append = false) => {
     try {
       const res = await fetch(`/api/webhooks/tawkto?offset=${currentOffset}`);
       const json: Data = await res.json();
-      setActiveChats(json.activeChats);
+      setActiveChats(json.activeChats || []);
       if (append) {
-        setTranscripts((prev) => [...prev, ...json.transcripts]);
+        setTranscripts((prev) => [...prev, ...(json.transcripts || [])]);
       } else {
-        setTranscripts(json.transcripts);
+        setTranscripts(json.transcripts || []);
       }
       setTotal(json.total);
       setOffset(currentOffset);
@@ -129,8 +134,8 @@ export default function Dashboard() {
 
   const properties = useMemo(() => {
     const props = new Set<string>();
-    transcripts.forEach((t) => { if (t.property_name) props.add(t.property_name); });
-    activeChats.forEach((c) => { if (c.property_name) props.add(c.property_name); });
+    (transcripts || []).forEach((t) => { if (t.property_name) props.add(t.property_name); });
+    (activeChats || []).forEach((c) => { if (c.property_name) props.add(c.property_name); });
     return Array.from(props);
   }, [transcripts, activeChats]);
 
@@ -165,7 +170,7 @@ export default function Dashboard() {
   );
 
   const filteredTranscripts = useMemo(
-    () => transcripts.filter(matchesFilters),
+    () => (transcripts || []).filter(matchesFilters),
     [transcripts, matchesFilters]
   );
 
@@ -302,40 +307,14 @@ export default function Dashboard() {
     }
   };
 
-  const noteTypeIcon = (type: string) => {
-    const icons: Record<string, string> = {
-      payment: "💰", followup: "📅", called: "📞",
-      info: "📝", closed: "✅", not_interested: "❌",
-    };
-    return icons[type] || "📝";
-  };
-
-  const formatShortDate = (time: string) => {
-    if (!time) return "";
-    const d = new Date(time);
-    return d.toLocaleDateString([], { month: "short", day: "numeric" }) +
-      " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  };
-
-  const fetchNotes = async (chatId: string) => {
-    if (notesCache[chatId] !== undefined) return;
-    const res = await fetch(`/api/notes?chat_id=${chatId}`);
-    const { notes } = await res.json();
-    setNotesCache(prev => ({ ...prev, [chatId]: notes }));
-  };
-
-  const openEdit = async (chatId: string) => {
-    if (editingChatId === chatId) {
-      setEditingChatId(null);
-      return;
-    }
-    setEditingChatId(chatId);
-    setEditForm({ note_type: "info", amount: "", note: "" });
-    await fetchNotes(chatId);
+  const fetchHistory = async (chatId: string) => {
+    const res = await fetch(`/api/sales/history?chat_id=${chatId}`);
+    const { history } = await res.json();
+    setHistoryCache(prev => ({ ...prev, [chatId]: history }));
   };
 
   const toggleHistory = async (chatId: string) => {
-    await fetchNotes(chatId);
+    await fetchHistory(chatId);
     setHistoryOpenIds(prev => {
       const next = new Set(prev);
       if (next.has(chatId)) next.delete(chatId); else next.add(chatId);
@@ -343,28 +322,36 @@ export default function Dashboard() {
     });
   };
 
-  const saveNote = async (chatId: string) => {
-    if (!editForm.note.trim()) return;
-    setSavingNote(true);
-    try {
-      const res = await fetch("/api/notes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: chatId,
-          note_type: editForm.note_type,
-          amount: editForm.note_type === "payment" && editForm.amount ? parseInt(editForm.amount) : null,
-          note: editForm.note,
-        }),
-      });
-      const { note } = await res.json();
-      setNotesCache(prev => ({ ...prev, [chatId]: [...(prev[chatId] || []), note] }));
-      setEditForm({ note_type: "info", amount: "", note: "" });
-      setHistoryOpenIds(prev => { const next = new Set(prev); next.add(chatId); return next; });
-    } finally {
-      setSavingNote(false);
-    }
-  };
+  const fmtSavedAt = (t: string) =>
+    t ? new Date(t).toLocaleString("en-GB", { hour12: true }) : "";
+
+  const renderLeadCard = (h: {
+    status?: string; converted?: boolean; premium_collected?: boolean;
+    updated_in_crm?: boolean; edited_name?: string | null;
+    edited_phone?: string | null; edited_info?: string | null;
+    premium_amount?: string | null; remarks?: string | null;
+    updated_by?: string | null;
+  }, label: string, id: number) => (
+    <div key={id} className="bg-gray-50 border border-gray-200 rounded-lg p-2.5 text-xs space-y-1.5">
+      <div className="flex items-center justify-between">
+        <span className="font-semibold text-black">{label}</span>
+        {h.updated_by && <span className="text-black/50">by {h.updated_by}</span>}
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {h.status && <span className={`px-2 py-0.5 rounded-full font-medium text-[10px] ${SALES_STATUS_COLORS[h.status] || SALES_STATUS_COLORS.New}`}>{h.status}</span>}
+        {h.converted && <span className="px-2 py-0.5 rounded-full font-medium text-[10px] bg-green-100 text-green-700">✓ Converted</span>}
+        {h.premium_collected && <span className="px-2 py-0.5 rounded-full font-medium text-[10px] bg-emerald-100 text-emerald-700">💰 Collected</span>}
+        {h.updated_in_crm && <span className="px-2 py-0.5 rounded-full font-medium text-[10px] bg-blue-100 text-blue-700">CRM ✓</span>}
+      </div>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+        {h.edited_name && <><span className="text-black/50">Name</span><span className="text-black font-medium">{h.edited_name}</span></>}
+        {h.edited_phone && <><span className="text-black/50">Phone</span><span className="text-black">{h.edited_phone}</span></>}
+        {h.edited_info && <><span className="text-black/50">Info</span><span className="text-black">{h.edited_info}</span></>}
+        {h.premium_amount != null && <><span className="text-black/50">Premium</span><span className="text-black font-semibold">₹{h.premium_amount}</span></>}
+      </div>
+      {h.remarks && <div className="bg-white border border-gray-200 rounded px-2 py-1"><span className="text-black/50 block text-[10px]">Remarks</span><span className="text-black">{h.remarks}</span></div>}
+    </div>
+  );
 
   if (loading) {
     return (
@@ -394,6 +381,13 @@ export default function Dashboard() {
               <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
                 {total} Chats
               </span>
+              <FollowupBell />
+              <a
+                href="/analytics"
+                className="px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full text-sm font-medium hover:bg-indigo-200 transition-colors cursor-pointer"
+              >
+                Analytics
+              </a>
               <a
                 href="/sales"
                 className="px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-sm font-medium hover:bg-emerald-200 transition-colors cursor-pointer"
@@ -532,82 +526,22 @@ export default function Dashboard() {
                         Started: {formatTime(chat.started_at)}
                       </div>
 
-                      {/* Edit Panel */}
+                      {/* Lead info & history — read only */}
                       <div className="mt-3 pt-3 border-t border-gray-200">
                         <button
-                          onClick={() => openEdit(chat.chat_id)}
-                          className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
+                          onClick={() => toggleHistory(chat.chat_id)}
+                          className="text-xs text-black font-semibold flex items-center gap-1 hover:underline"
                         >
-                          ✏️ {editingChatId === chat.chat_id ? "Close Edit" : "Edit"}
+                          📋 Lead Info{historyCache[chat.chat_id]?.length ? ` · ${historyCache[chat.chat_id].length} prev` : ""}
                         </button>
-
-                        {editingChatId === chat.chat_id && (
-                          <div className="mt-3 space-y-2">
-                            <select
-                              value={editForm.note_type}
-                              onChange={e => setEditForm(f => ({ ...f, note_type: e.target.value }))}
-                              className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm text-black bg-white"
-                            >
-                              <option value="info">📝 Info</option>
-                              <option value="payment">💰 Payment</option>
-                              <option value="followup">📅 Follow-up</option>
-                              <option value="called">📞 Called</option>
-                              <option value="closed">✅ Closed</option>
-                              <option value="not_interested">❌ Not Interested</option>
-                            </select>
-
-                            {editForm.note_type === "payment" && (
-                              <input
-                                type="number"
-                                placeholder="Amount (₹)"
-                                value={editForm.amount}
-                                onChange={e => setEditForm(f => ({ ...f, amount: e.target.value }))}
-                                className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm text-black"
-                              />
-                            )}
-
-                            <textarea
-                              placeholder="Add a note..."
-                              value={editForm.note}
-                              onChange={e => setEditForm(f => ({ ...f, note: e.target.value }))}
-                              rows={2}
-                              className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm text-black resize-none"
-                            />
-
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => saveNote(chat.chat_id)}
-                                disabled={savingNote || !editForm.note.trim()}
-                                className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-40 hover:bg-blue-700 transition-colors"
-                              >
-                                {savingNote ? "Saving…" : "Save"}
-                              </button>
-                              <button
-                                onClick={() => toggleHistory(chat.chat_id)}
-                                className="px-4 py-1.5 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
-                              >
-                                📋 History{notesCache[chat.chat_id]?.length ? ` (${notesCache[chat.chat_id].length})` : ""}
-                              </button>
-                            </div>
-
-                            {historyOpenIds.has(chat.chat_id) && (
-                              <div className="mt-1 space-y-1.5 max-h-44 overflow-y-auto">
-                                {(notesCache[chat.chat_id] || []).length === 0 ? (
-                                  <p className="text-xs text-gray-400 text-center py-3">No history yet</p>
-                                ) : (
-                                  (notesCache[chat.chat_id] || []).map(n => (
-                                    <div key={n.id} className="bg-gray-50 rounded-lg p-2 text-xs">
-                                      <div className="flex items-center gap-1.5 mb-0.5">
-                                        <span>{noteTypeIcon(n.note_type)}</span>
-                                        <span className="font-medium text-gray-700 capitalize">{n.note_type.replace("_", " ")}</span>
-                                        {n.amount && <span className="text-green-600 font-semibold">₹{n.amount}</span>}
-                                        <span className="text-gray-400 ml-auto">{formatShortDate(n.created_at)}</span>
-                                      </div>
-                                      <p className="text-gray-800">{n.note}</p>
-                                    </div>
-                                  ))
-                                )}
-                              </div>
+                        {historyOpenIds.has(chat.chat_id) && (
+                          <div className="mt-2 space-y-2 max-h-64 overflow-y-auto">
+                            {chat.sales
+                              ? renderLeadCard(chat.sales, `Current · ${fmtSavedAt(chat.sales.updated_at || "")}`, 0)
+                              : <p className="text-xs text-black/50 text-center py-2">No sales info yet</p>
+                            }
+                            {(historyCache[chat.chat_id] || []).map(h =>
+                              renderLeadCard(h, fmtSavedAt(h.saved_at), h.id)
                             )}
                           </div>
                         )}
@@ -716,82 +650,22 @@ export default function Dashboard() {
                         </div>
                       )}
 
-                      {/* Edit Panel */}
+                      {/* Lead info & history — read only */}
                       <div className="mt-3 pt-3 border-t border-gray-200">
                         <button
-                          onClick={() => openEdit(transcript.chat_id)}
-                          className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
+                          onClick={() => toggleHistory(transcript.chat_id)}
+                          className="text-xs text-black font-semibold flex items-center gap-1 hover:underline"
                         >
-                          ✏️ {editingChatId === transcript.chat_id ? "Close Edit" : "Edit"}
+                          📋 Lead Info{historyCache[transcript.chat_id]?.length ? ` · ${historyCache[transcript.chat_id].length} prev` : ""}
                         </button>
-
-                        {editingChatId === transcript.chat_id && (
-                          <div className="mt-3 space-y-2">
-                            <select
-                              value={editForm.note_type}
-                              onChange={e => setEditForm(f => ({ ...f, note_type: e.target.value }))}
-                              className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm text-black bg-white"
-                            >
-                              <option value="info">📝 Info</option>
-                              <option value="payment">💰 Payment</option>
-                              <option value="followup">📅 Follow-up</option>
-                              <option value="called">📞 Called</option>
-                              <option value="closed">✅ Closed</option>
-                              <option value="not_interested">❌ Not Interested</option>
-                            </select>
-
-                            {editForm.note_type === "payment" && (
-                              <input
-                                type="number"
-                                placeholder="Amount (₹)"
-                                value={editForm.amount}
-                                onChange={e => setEditForm(f => ({ ...f, amount: e.target.value }))}
-                                className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm text-black"
-                              />
-                            )}
-
-                            <textarea
-                              placeholder="Add a note..."
-                              value={editForm.note}
-                              onChange={e => setEditForm(f => ({ ...f, note: e.target.value }))}
-                              rows={2}
-                              className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm text-black resize-none"
-                            />
-
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => saveNote(transcript.chat_id)}
-                                disabled={savingNote || !editForm.note.trim()}
-                                className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-40 hover:bg-blue-700 transition-colors"
-                              >
-                                {savingNote ? "Saving…" : "Save"}
-                              </button>
-                              <button
-                                onClick={() => toggleHistory(transcript.chat_id)}
-                                className="px-4 py-1.5 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
-                              >
-                                📋 History{notesCache[transcript.chat_id]?.length ? ` (${notesCache[transcript.chat_id].length})` : ""}
-                              </button>
-                            </div>
-
-                            {historyOpenIds.has(transcript.chat_id) && (
-                              <div className="mt-1 space-y-1.5 max-h-44 overflow-y-auto">
-                                {(notesCache[transcript.chat_id] || []).length === 0 ? (
-                                  <p className="text-xs text-gray-400 text-center py-3">No history yet</p>
-                                ) : (
-                                  (notesCache[transcript.chat_id] || []).map(n => (
-                                    <div key={n.id} className="bg-gray-50 rounded-lg p-2 text-xs">
-                                      <div className="flex items-center gap-1.5 mb-0.5">
-                                        <span>{noteTypeIcon(n.note_type)}</span>
-                                        <span className="font-medium text-gray-700 capitalize">{n.note_type.replace("_", " ")}</span>
-                                        {n.amount && <span className="text-green-600 font-semibold">₹{n.amount}</span>}
-                                        <span className="text-gray-400 ml-auto">{formatShortDate(n.created_at)}</span>
-                                      </div>
-                                      <p className="text-gray-800">{n.note}</p>
-                                    </div>
-                                  ))
-                                )}
-                              </div>
+                        {historyOpenIds.has(transcript.chat_id) && (
+                          <div className="mt-2 space-y-2 max-h-64 overflow-y-auto">
+                            {transcript.sales
+                              ? renderLeadCard(transcript.sales, `Current · ${fmtSavedAt(transcript.sales.updated_at || "")}`, 0)
+                              : <p className="text-xs text-black/50 text-center py-2">No sales info yet</p>
+                            }
+                            {(historyCache[transcript.chat_id] || []).map(h =>
+                              renderLeadCard(h, fmtSavedAt(h.saved_at), h.id)
                             )}
                           </div>
                         )}

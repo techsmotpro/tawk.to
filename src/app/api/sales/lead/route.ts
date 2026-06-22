@@ -52,6 +52,7 @@ export async function POST(req: Request) {
       updated_in_crm: Boolean(body.updated_in_crm),
       remarks: body.remarks ?? null,
       updated_by: body.updated_by ?? null,
+      followup_at: body.followup_at ?? null,
     });
 
     return NextResponse.json({ success: true, lead });
