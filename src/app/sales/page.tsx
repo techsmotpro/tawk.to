@@ -16,6 +16,7 @@ interface SalesLead {
   remarks: string | null;
   updated_by: string | null;
   updated_at: string | null;
+  followup_at: string | null;
 }
 
 interface Lead {

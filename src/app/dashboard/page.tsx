@@ -33,6 +33,8 @@ interface SalesLead {
   premium_collected: boolean;
   updated_in_crm: boolean;
   remarks: string | null;
+  updated_by?: string | null;
+  updated_at?: string | null;
 }
 
 interface DbMessage {

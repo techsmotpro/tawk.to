@@ -163,7 +163,7 @@ export default function AnalyticsPage() {
                   contentStyle={{ fontSize: 12, borderRadius: 8, color: "#000", border: "1px solid #000" }}
                   labelStyle={{ color: "#000", fontWeight: 700 }}
                   itemStyle={{ color: "#000" }}
-                  formatter={(v: number) => [v, "Chats"]}
+                  formatter={(v) => [v, "Chats"]}
                 />
                 <Area
                   type="monotone"
@@ -191,7 +191,7 @@ export default function AnalyticsPage() {
                   <YAxis tick={{ fontSize: 11, fill: "#000" }} allowDecimals={false} />
                   <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, color: "#000", border: "1px solid #000" }}
                   labelStyle={{ color: "#000", fontWeight: 700 }}
-                  itemStyle={{ color: "#000" }} formatter={(v: number) => [v, "Chats"]} />
+                  itemStyle={{ color: "#000" }} formatter={(v) => [v, "Chats"]} />
                   <Bar dataKey="count" fill="#6366f1" radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -219,7 +219,7 @@ export default function AnalyticsPage() {
                   </Pie>
                   <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, color: "#000", border: "1px solid #000" }}
                   labelStyle={{ color: "#000", fontWeight: 700 }}
-                  itemStyle={{ color: "#000" }} formatter={(v: number) => [v, "Chats"]} />
+                  itemStyle={{ color: "#000" }} formatter={(v) => [v, "Chats"]} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="flex-1 space-y-2">
@@ -254,7 +254,7 @@ export default function AnalyticsPage() {
                   <YAxis type="category" dataKey="property" tick={{ fontSize: 11, fill: "#000" }} width={110} />
                   <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, color: "#000", border: "1px solid #000" }}
                   labelStyle={{ color: "#000", fontWeight: 700 }}
-                  itemStyle={{ color: "#000" }} formatter={(v: number) => [v, "Chats"]} />
+                  itemStyle={{ color: "#000" }} formatter={(v) => [v, "Chats"]} />
                   <Bar dataKey="count" radius={[0, 3, 3, 0]}>
                     {data.chatsByProperty.map((_, i) => (
                       <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
@@ -279,7 +279,7 @@ export default function AnalyticsPage() {
                   <YAxis type="category" dataKey="country" tick={{ fontSize: 11, fill: "#000" }} width={60} />
                   <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, color: "#000", border: "1px solid #000" }}
                   labelStyle={{ color: "#000", fontWeight: 700 }}
-                  itemStyle={{ color: "#000" }} formatter={(v: number) => [v, "Chats"]} />
+                  itemStyle={{ color: "#000" }} formatter={(v) => [v, "Chats"]} />
                   <Bar dataKey="count" radius={[0, 3, 3, 0]}>
                     {data.topCountries.map((_, i) => (
                       <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
