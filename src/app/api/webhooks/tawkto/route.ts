@@ -6,6 +6,7 @@ import {
   handleTranscriptCreated,
   handleTicketCreated,
   getData,
+  getDataForRange,
 } from "@/lib/messages";
 import { initDb } from "@/lib/db";
 
@@ -55,8 +56,18 @@ export async function GET(req: NextRequest) {
 
   try {
     const offset = parseInt(req.nextUrl.searchParams.get("offset") ?? "0", 10);
+    const safeOffset = isNaN(offset) ? 0 : offset;
     const dateParam = req.nextUrl.searchParams.get("date") || undefined;
-    const data = await getData(isNaN(offset) ? 0 : offset, dateParam);
+    const dateFrom = req.nextUrl.searchParams.get("dateFrom");
+    const dateTo = req.nextUrl.searchParams.get("dateTo");
+
+    let data;
+    if (dateFrom || dateTo) {
+      const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+      data = await getDataForRange(dateFrom || today, dateTo || today, safeOffset);
+    } else {
+      data = await getData(safeOffset, dateParam);
+    }
     return NextResponse.json(data);
   } catch (e) {
     console.error("GET error:", e);

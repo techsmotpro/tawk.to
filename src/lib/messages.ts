@@ -294,6 +294,47 @@ export async function getData(offset = 0, dateStr?: string) {
   };
 }
 
+// Fetch transcripts for an IST date range — used by the analytics history browser.
+export async function getDataForRange(dateFrom: string, dateTo: string, offset = 0) {
+  const start = new Date(dateFrom + "T00:00:00+05:30");
+  const end = new Date(dateTo + "T23:59:59.999+05:30");
+  const startIso = start.toISOString();
+  const endIso = end.toISOString();
+
+  const transcripts = await sql`
+    SELECT c.*, COUNT(m.id) as message_count
+    FROM chats c
+    LEFT JOIN messages m ON c.chat_id = m.chat_id
+    WHERE c.status IN ('transcript', 'ended')
+      AND c.created_at >= ${startIso}
+      AND c.created_at < ${endIso}
+    GROUP BY c.id
+    ORDER BY c.created_at DESC
+    LIMIT ${PAGE_SIZE} OFFSET ${offset}
+  `;
+
+  for (const t of transcripts) {
+    t.messages = await sql`
+      SELECT * FROM messages WHERE chat_id = ${t.chat_id} ORDER BY sent_at ASC
+    `;
+  }
+
+  const totalRow = await sql`
+    SELECT COUNT(*) as total FROM chats
+    WHERE status IN ('transcript', 'ended')
+      AND created_at >= ${startIso}
+      AND created_at < ${endIso}
+  `;
+  const total = Number(totalRow[0]?.total ?? 0);
+
+  return {
+    transcripts: await attachSalesLeads(transcripts),
+    total,
+    offset,
+    pageSize: PAGE_SIZE,
+  };
+}
+
 // Fetch all chats + messages for a given IST date for the end-of-day CSV export.
 export async function getChatsForExport(dateStr: string) {
   const { start, end } = getISTDayBounds(dateStr);
