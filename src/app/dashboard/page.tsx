@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
+import FollowupBell from "@/components/FollowupBell";
 
 interface DbChat {
   id: number;
@@ -32,6 +33,8 @@ interface SalesLead {
   premium_collected: boolean;
   updated_in_crm: boolean;
   remarks: string | null;
+  updated_by?: string | null;
+  updated_at?: string | null;
 }
 
 interface DbMessage {
@@ -43,6 +46,22 @@ interface DbMessage {
   message_text: string;
   sent_at: string;
   created_at: string;
+}
+
+interface LeadHistory {
+  id: number;
+  chat_id: string;
+  edited_name: string | null;
+  edited_phone: string | null;
+  edited_info: string | null;
+  status: string;
+  converted: boolean;
+  premium_amount: string | null;
+  premium_collected: boolean;
+  updated_in_crm: boolean;
+  remarks: string | null;
+  updated_by: string | null;
+  saved_at: string;
 }
 
 interface Data {
@@ -91,6 +110,8 @@ export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProperty, setSelectedProperty] = useState<string>("all");
   const [viewDate, setViewDate] = useState<string>(getTodayIST());
+  const [historyOpenIds, setHistoryOpenIds] = useState<Set<string>>(new Set());
+  const [historyCache, setHistoryCache] = useState<Record<string, LeadHistory[]>>({});
 
   const isToday = viewDate === getTodayIST();
 
@@ -158,6 +179,11 @@ export default function Dashboard() {
     });
   };
 
+  const formatDate = (time: string) => {
+    if (!time) return "";
+    return new Date(time).toLocaleDateString("en-GB", { timeZone: "Asia/Kolkata" });
+  };
+
   const formatShortTime = (time: string) => {
     if (!time) return "";
     return new Date(time).toLocaleTimeString("en-GB", {
@@ -170,10 +196,10 @@ export default function Dashboard() {
 
   const getSenderLabel = (senderType: string, senderName: string | null) => {
     if (senderType === "v" || senderType === "visitor")
-      return { label: "Visitor", icon: "👤" };
+      return { label: "Visitor", color: "bg-blue-100 text-blue-800", icon: "👤" };
     if (senderType === "a" || senderType === "agent")
-      return { label: senderName || "Agent", icon: "🧑‍💼" };
-    return { label: senderName || "System", icon: "🤖" };
+      return { label: senderName || "Agent", color: "bg-green-100 text-green-800", icon: "🧑‍💼" };
+    return { label: senderName || "System", color: "bg-gray-100 text-gray-800", icon: "🤖" };
   };
 
   const getCountryFlag = (country: string) => {
@@ -186,14 +212,12 @@ export default function Dashboard() {
 
   const parseVisitorInfo = (messages: DbMessage[] | undefined) => {
     if (!messages || messages.length === 0) return null;
-    const vis = messages.filter(
-      (m) => m.sender_type === "v" || m.sender_type === "visitor"
-    );
-    const pool = vis.length > 0 ? vis : messages;
-    const target =
-      pool.find((m) => /Phone\s*:/i.test(m.message_text || "")) || pool[0];
-    if (!target?.message_text) return null;
-    const text = target.message_text;
+    const visitorMsgs = messages.filter((m) => m.sender_type === "v" || m.sender_type === "visitor");
+    const allMsgs = visitorMsgs.length > 0 ? visitorMsgs : messages;
+    const phoneMsg = allMsgs.find((m) => /Phone\s*:/i.test(m.message_text || ""));
+    const targetMsg = phoneMsg || allMsgs[0];
+    if (!targetMsg?.message_text) return null;
+    const text = targetMsg.message_text;
     return {
       name: text.match(/Name\s*:\s*([^\r\n]+)/i)?.[1]?.trim() || null,
       phone: text.match(/Phone\s*:\s*([^\r\n]+)/i)?.[1]?.trim() || null,
@@ -201,26 +225,74 @@ export default function Dashboard() {
     };
   };
 
+  const fetchHistory = async (chatId: string) => {
+    const res = await fetch(`/api/sales/history?chat_id=${chatId}`);
+    const { history } = await res.json();
+    setHistoryCache((prev) => ({ ...prev, [chatId]: history }));
+  };
+
+  const toggleHistory = async (chatId: string) => {
+    await fetchHistory(chatId);
+    setHistoryOpenIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(chatId)) next.delete(chatId); else next.add(chatId);
+      return next;
+    });
+  };
+
+  const fmtSavedAt = (t: string) =>
+    t ? new Date(t).toLocaleString("en-GB", { timeZone: "Asia/Kolkata", hour12: true }) : "";
+
+  const renderLeadCard = (
+    h: {
+      status?: string; converted?: boolean; premium_collected?: boolean;
+      updated_in_crm?: boolean; edited_name?: string | null;
+      edited_phone?: string | null; edited_info?: string | null;
+      premium_amount?: string | null; remarks?: string | null;
+      updated_by?: string | null;
+    },
+    label: string,
+    id: number
+  ) => (
+    <div key={id} className="bg-gray-50 border border-gray-200 rounded-lg p-2.5 text-xs space-y-1.5">
+      <div className="flex items-center justify-between">
+        <span className="font-semibold text-black">{label}</span>
+        {h.updated_by && <span className="text-black/50">by {h.updated_by}</span>}
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {h.status && <span className={`px-2 py-0.5 rounded-full font-medium text-[10px] ${SALES_STATUS_COLORS[h.status] || SALES_STATUS_COLORS.New}`}>{h.status}</span>}
+        {h.converted && <span className="px-2 py-0.5 rounded-full font-medium text-[10px] bg-green-100 text-green-700">✓ Converted</span>}
+        {h.premium_collected && <span className="px-2 py-0.5 rounded-full font-medium text-[10px] bg-emerald-100 text-emerald-700">💰 Collected</span>}
+        {h.updated_in_crm && <span className="px-2 py-0.5 rounded-full font-medium text-[10px] bg-blue-100 text-blue-700">CRM ✓</span>}
+      </div>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+        {h.edited_name && <><span className="text-black/50">Name</span><span className="text-black font-medium">{h.edited_name}</span></>}
+        {h.edited_phone && <><span className="text-black/50">Phone</span><span className="text-black">{h.edited_phone}</span></>}
+        {h.edited_info && <><span className="text-black/50">Info</span><span className="text-black">{h.edited_info}</span></>}
+        {h.premium_amount != null && <><span className="text-black/50">Premium</span><span className="text-black font-semibold">₹{h.premium_amount}</span></>}
+      </div>
+      {h.remarks && (
+        <div className="bg-white border border-gray-200 rounded px-2 py-1">
+          <span className="text-black/50 block text-[10px]">Remarks</span>
+          <span className="text-black">{h.remarks}</span>
+        </div>
+      )}
+    </div>
+  );
+
   const downloadExcel = () => {
-    const toExport =
-      searchQuery || selectedProperty !== "all"
-        ? filteredTranscripts
-        : transcripts;
+    const toExport = searchQuery || selectedProperty !== "all" ? filteredTranscripts : transcripts;
     if (toExport.length === 0) {
       alert("No chats to export.");
       return;
     }
-
     const rows = toExport.map((t) => {
       const info = parseVisitorInfo(t.messages);
       const s = t.sales;
       const conversation =
         t.messages
           ?.map((m) => {
-            const who =
-              m.sender_type === "v" || m.sender_type === "visitor"
-                ? "Visitor"
-                : m.sender_name || "Agent";
+            const who = m.sender_type === "v" || m.sender_type === "visitor" ? "Visitor" : m.sender_name || "Agent";
             return `[${formatShortTime(m.sent_at)}] ${who}: ${m.message_text}`;
           })
           .join(" | ") || "";
@@ -243,21 +315,15 @@ export default function Dashboard() {
         conversation,
       ];
     });
-
     const header = [
       "Property", "Date & Time", "Name", "Phone", "Email", "Location", "Visitor Location",
       "Sales Status", "Converted", "Premium Amount", "Premium Collected", "Updated in CRM",
       "Other Info", "Remarks", "Message Count", "Conversation",
     ];
     const csvContent = [header, ...rows]
-      .map((row) =>
-        row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")
-      )
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
       .join("\n");
-
-    const blob = new Blob(["﻿" + csvContent], {
-      type: "text/csv;charset=utf-8;",
-    });
+    const blob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -286,7 +352,9 @@ export default function Dashboard() {
             <div>
               <h1 className="text-2xl font-bold text-black">Tawk.to Dashboard</h1>
               <p className="text-sm text-gray-500 mt-1">
-                {isToday ? `Last updated: ${lastUpdate} · Auto-refresh every 5s` : `Viewing ${displayDate(viewDate)} · No auto-refresh`}
+                {isToday
+                  ? `Last updated: ${lastUpdate} · Auto-refresh every 5s`
+                  : `Viewing ${displayDate(viewDate)} · No auto-refresh`}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -296,6 +364,13 @@ export default function Dashboard() {
               <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
                 {total} Chats
               </span>
+              <FollowupBell />
+              <a
+                href="/analytics"
+                className="px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full text-sm font-medium hover:bg-indigo-200 transition-colors cursor-pointer"
+              >
+                Analytics
+              </a>
               <a
                 href="/sales"
                 className="px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-sm font-medium hover:bg-emerald-200 transition-colors cursor-pointer"
@@ -440,6 +515,25 @@ export default function Dashboard() {
                       <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
                         Started: {formatTime(chat.started_at)}
                       </div>
+                      <div className="mt-3 pt-3 border-t border-gray-200">
+                        <button
+                          onClick={() => toggleHistory(chat.chat_id)}
+                          className="text-xs text-black font-semibold flex items-center gap-1 hover:underline"
+                        >
+                          📋 Lead Info{historyCache[chat.chat_id]?.length ? ` · ${historyCache[chat.chat_id].length} prev` : ""}
+                        </button>
+                        {historyOpenIds.has(chat.chat_id) && (
+                          <div className="mt-2 space-y-2 max-h-64 overflow-y-auto">
+                            {chat.sales
+                              ? renderLeadCard(chat.sales, `Current · ${fmtSavedAt(chat.sales.updated_at || "")}`, 0)
+                              : <p className="text-xs text-black/50 text-center py-2">No sales info yet</p>
+                            }
+                            {(historyCache[chat.chat_id] || []).map((h) =>
+                              renderLeadCard(h, fmtSavedAt(h.saved_at), h.id)
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -487,7 +581,9 @@ export default function Dashboard() {
                   <div key={transcript.chat_id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                     <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-4 py-3">
                       <div className="text-white font-bold text-lg">{transcript.property_name || "Unknown Property"}</div>
-                      <div className="text-white/80 text-xs mt-1">{formatTime(transcript.created_at)}</div>
+                      <div className="text-white/80 text-xs mt-1">
+                        {formatDate(transcript.created_at)} • {formatShortTime(transcript.created_at)}
+                      </div>
                     </div>
                     <div className="p-4">
                       {transcript.sales && (
@@ -551,6 +647,25 @@ export default function Dashboard() {
                           </div>
                         </div>
                       )}
+                      <div className="mt-3 pt-3 border-t border-gray-200">
+                        <button
+                          onClick={() => toggleHistory(transcript.chat_id)}
+                          className="text-xs text-black font-semibold flex items-center gap-1 hover:underline"
+                        >
+                          📋 Lead Info{historyCache[transcript.chat_id]?.length ? ` · ${historyCache[transcript.chat_id].length} prev` : ""}
+                        </button>
+                        {historyOpenIds.has(transcript.chat_id) && (
+                          <div className="mt-2 space-y-2 max-h-64 overflow-y-auto">
+                            {transcript.sales
+                              ? renderLeadCard(transcript.sales, `Current · ${fmtSavedAt(transcript.sales.updated_at || "")}`, 0)
+                              : <p className="text-xs text-black/50 text-center py-2">No sales info yet</p>
+                            }
+                            {(historyCache[transcript.chat_id] || []).map((h) =>
+                              renderLeadCard(h, fmtSavedAt(h.saved_at), h.id)
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
