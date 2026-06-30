@@ -55,7 +55,8 @@ export async function GET(req: NextRequest) {
 
   try {
     const offset = parseInt(req.nextUrl.searchParams.get("offset") ?? "0", 10);
-    const data = await getData(isNaN(offset) ? 0 : offset);
+    const dateParam = req.nextUrl.searchParams.get("date") || undefined;
+    const data = await getData(isNaN(offset) ? 0 : offset, dateParam);
     return NextResponse.json(data);
   } catch (e) {
     console.error("GET error:", e);

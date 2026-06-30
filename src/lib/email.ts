@@ -351,6 +351,42 @@ export async function sendDailyReportEmail(
   }
 }
 
+export async function sendDailyCsvEmail(csvContent: string, date: string) {
+  const csvBuffer = Buffer.from("﻿" + csvContent, "utf-8");
+  try {
+    await transporter.sendMail({
+      from: `"Tawk.to Daily Export" <${process.env.SMTP_USER}>`,
+      to: REPORT_EMAILS,
+      subject: `📋 Daily Chat Export — ${date}`,
+      attachments: [
+        {
+          filename: `chats-${date}.csv`,
+          content: csvBuffer,
+          contentType: "text/csv",
+        },
+      ],
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; text-align: center; border-radius: 12px 12px 0 0;">
+            <h1 style="color: white; margin: 0;">📋 Daily Chat Export</h1>
+            <p style="color: rgba(255,255,255,0.8); margin: 8px 0 0;">All chats for ${date} (IST)</p>
+          </div>
+          <div style="padding: 20px; background: #f9f9f9; text-align: center;">
+            <p style="color: #555;">The CSV file is attached. Open it in Excel or Google Sheets to review all chats for this day.</p>
+          </div>
+          <div style="text-align: center; padding: 16px; color: #999; font-size: 12px;">
+            Powered by SmotPro Tawk.to Integration
+          </div>
+        </div>
+      `,
+    });
+    console.log(`✅ Daily CSV export sent for ${date}`);
+  } catch (error) {
+    console.error("❌ Daily CSV export email error:", error);
+    throw error;
+  }
+}
+
 export async function sendTicketEmail(data: {
   ticketId: string;
   ticketHumanId: number;

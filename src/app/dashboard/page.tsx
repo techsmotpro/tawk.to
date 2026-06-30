@@ -49,8 +49,7 @@ interface Data {
   activeChats: DbChat[];
   transcripts: DbChat[];
   total: number;
-  offset: number;
-  pageSize: number;
+  date: string;
 }
 
 const SALES_STATUS_COLORS: Record<string, string> = {
@@ -62,56 +61,70 @@ const SALES_STATUS_COLORS: Record<string, string> = {
   "Double Entry": "bg-orange-100 text-orange-700",
 };
 
+function getTodayIST(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+}
+
+function shiftDay(dateStr: string, delta: number): string {
+  const d = new Date(dateStr + "T12:00:00+05:30");
+  d.setDate(d.getDate() + delta);
+  return d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+}
+
+function displayDate(dateStr: string): string {
+  const today = getTodayIST();
+  if (dateStr === today) return "Today";
+  if (dateStr === shiftDay(today, -1)) return "Yesterday";
+  return new Date(dateStr + "T12:00:00+05:30").toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 export default function Dashboard() {
   const [activeChats, setActiveChats] = useState<DbChat[]>([]);
   const [transcripts, setTranscripts] = useState<DbChat[]>([]);
   const [total, setTotal] = useState(0);
-  const [offset, setOffset] = useState(0);
-  const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [exporting, setExporting] = useState(false);
   const [lastUpdate, setLastUpdate] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProperty, setSelectedProperty] = useState<string>("all");
-  const [selectedDate, setSelectedDate] = useState<string>("");
-  const [dateFrom, setDateFrom] = useState<string>("");
-  const [dateTo, setDateTo] = useState<string>("");
+  const [viewDate, setViewDate] = useState<string>(getTodayIST());
 
-  const fetchData = useCallback(async (currentOffset = 0, append = false) => {
+  const isToday = viewDate === getTodayIST();
+
+  const fetchData = useCallback(async (date: string) => {
     try {
-      const res = await fetch(`/api/webhooks/tawkto?offset=${currentOffset}`);
+      const res = await fetch(`/api/webhooks/tawkto?date=${date}`);
       const json: Data = await res.json();
-      setActiveChats(json.activeChats);
-      if (append) {
-        setTranscripts((prev) => [...prev, ...json.transcripts]);
-      } else {
-        setTranscripts(json.transcripts);
-      }
-      setTotal(json.total);
-      setOffset(currentOffset);
-      setPageSize(json.pageSize);
+      setActiveChats(json.activeChats || []);
+      setTranscripts(json.transcripts || []);
+      setTotal(json.total || 0);
       setLoading(false);
-      setLoadingMore(false);
-      setLastUpdate(new Date().toLocaleTimeString());
+      setLastUpdate(
+        new Date().toLocaleTimeString("en-GB", {
+          timeZone: "Asia/Kolkata",
+          hour12: true,
+        })
+      );
     } catch (e) {
       console.error("Failed to fetch", e);
       setLoading(false);
-      setLoadingMore(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchData(0, false);
-    const interval = setInterval(() => fetchData(0, false), 5000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
+    setLoading(true);
+    setTranscripts([]);
+    setActiveChats([]);
+    fetchData(viewDate);
 
-  const handleLoadMore = () => {
-    const nextOffset = offset + pageSize;
-    setLoadingMore(true);
-    fetchData(nextOffset, true);
-  };
+    if (viewDate === getTodayIST()) {
+      const interval = setInterval(() => fetchData(viewDate), 5000);
+      return () => clearInterval(interval);
+    }
+  }, [fetchData, viewDate]);
 
   const properties = useMemo(() => {
     const props = new Set<string>();
@@ -120,54 +133,35 @@ export default function Dashboard() {
     return Array.from(props);
   }, [transcripts, activeChats]);
 
-  const matchesFilters = useCallback(
-    (t: DbChat) => {
-      const searchMatch =
-        searchQuery === "" ||
-        t.visitor_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        t.visitor_email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        t.chat_id?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        t.messages?.some((m) =>
-          m.message_text?.toLowerCase().includes(searchQuery.toLowerCase())
-        );
-
-      const propertyMatch =
-        selectedProperty === "all" || t.property_name === selectedProperty;
-
-      // Single date filter (existing)
-      const dateMatch =
-        selectedDate === "" ||
-        new Date(t.created_at).toLocaleDateString("en-GB") ===
-          new Date(selectedDate).toLocaleDateString("en-GB");
-
-      // Date range filter
-      const chatDate = new Date(t.created_at);
-      const fromMatch = dateFrom === "" || chatDate >= new Date(dateFrom);
-      const toMatch = dateTo === "" || chatDate <= new Date(dateTo + "T23:59:59");
-
-      return searchMatch && propertyMatch && dateMatch && fromMatch && toMatch;
-    },
-    [searchQuery, selectedProperty, selectedDate, dateFrom, dateTo]
-  );
-
   const filteredTranscripts = useMemo(
-    () => transcripts.filter(matchesFilters),
-    [transcripts, matchesFilters]
+    () =>
+      transcripts.filter((t) => {
+        const q = searchQuery.toLowerCase();
+        const matchSearch =
+          q === "" ||
+          t.visitor_name?.toLowerCase().includes(q) ||
+          t.visitor_email?.toLowerCase().includes(q) ||
+          t.chat_id?.toLowerCase().includes(q) ||
+          t.messages?.some((m) => m.message_text?.toLowerCase().includes(q));
+        const matchProp =
+          selectedProperty === "all" || t.property_name === selectedProperty;
+        return matchSearch && matchProp;
+      }),
+    [transcripts, searchQuery, selectedProperty]
   );
 
   const formatTime = (time: string) => {
     if (!time) return "";
-    return new Date(time).toLocaleString("en-GB", { hour12: true });
-  };
-
-  const formatDate = (time: string) => {
-    if (!time) return "";
-    return new Date(time).toLocaleDateString("en-GB");
+    return new Date(time).toLocaleString("en-GB", {
+      timeZone: "Asia/Kolkata",
+      hour12: true,
+    });
   };
 
   const formatShortTime = (time: string) => {
     if (!time) return "";
     return new Date(time).toLocaleTimeString("en-GB", {
+      timeZone: "Asia/Kolkata",
       hour: "2-digit",
       minute: "2-digit",
       hour12: true,
@@ -176,10 +170,10 @@ export default function Dashboard() {
 
   const getSenderLabel = (senderType: string, senderName: string | null) => {
     if (senderType === "v" || senderType === "visitor")
-      return { label: "Visitor", color: "bg-blue-100 text-blue-800", icon: "👤" };
+      return { label: "Visitor", icon: "👤" };
     if (senderType === "a" || senderType === "agent")
-      return { label: senderName || "Agent", color: "bg-green-100 text-green-800", icon: "🧑‍💼" };
-    return { label: senderName || "System", color: "bg-gray-100 text-gray-800", icon: "🤖" };
+      return { label: senderName || "Agent", icon: "🧑‍💼" };
+    return { label: senderName || "System", icon: "🤖" };
   };
 
   const getCountryFlag = (country: string) => {
@@ -192,12 +186,14 @@ export default function Dashboard() {
 
   const parseVisitorInfo = (messages: DbMessage[] | undefined) => {
     if (!messages || messages.length === 0) return null;
-    const visitorMsgs = messages.filter((m) => m.sender_type === "v" || m.sender_type === "visitor");
-    const allMsgs = visitorMsgs.length > 0 ? visitorMsgs : messages;
-    const phoneMsg = allMsgs.find((m) => /Phone\s*:/i.test(m.message_text || ""));
-    const targetMsg = phoneMsg || allMsgs[0];
-    if (!targetMsg?.message_text) return null;
-    const text = targetMsg.message_text;
+    const vis = messages.filter(
+      (m) => m.sender_type === "v" || m.sender_type === "visitor"
+    );
+    const pool = vis.length > 0 ? vis : messages;
+    const target =
+      pool.find((m) => /Phone\s*:/i.test(m.message_text || "")) || pool[0];
+    if (!target?.message_text) return null;
+    const text = target.message_text;
     return {
       name: text.match(/Name\s*:\s*([^\r\n]+)/i)?.[1]?.trim() || null,
       phone: text.match(/Phone\s*:\s*([^\r\n]+)/i)?.[1]?.trim() || null,
@@ -205,27 +201,29 @@ export default function Dashboard() {
     };
   };
 
-  const hasRangeFilter = dateFrom !== "" || dateTo !== "";
-  const hasAnyFilter = searchQuery || selectedProperty !== "all" || selectedDate || hasRangeFilter;
+  const downloadExcel = () => {
+    const toExport =
+      searchQuery || selectedProperty !== "all"
+        ? filteredTranscripts
+        : transcripts;
+    if (toExport.length === 0) {
+      alert("No chats to export.");
+      return;
+    }
 
-  const clearAllFilters = () => {
-    setSearchQuery("");
-    setSelectedProperty("all");
-    setSelectedDate("");
-    setDateFrom("");
-    setDateTo("");
-  };
-
-  const buildCsv = (chats: DbChat[]) => {
-    const rows = chats.map((t) => {
+    const rows = toExport.map((t) => {
       const info = parseVisitorInfo(t.messages);
-      const conversation = t.messages
-        ?.map((m) => {
-          const who = m.sender_type === "v" || m.sender_type === "visitor" ? "Visitor" : (m.sender_name || "Agent");
-          return `[${formatShortTime(m.sent_at)}] ${who}: ${m.message_text}`;
-        })
-        .join(" | ") || "";
       const s = t.sales;
+      const conversation =
+        t.messages
+          ?.map((m) => {
+            const who =
+              m.sender_type === "v" || m.sender_type === "visitor"
+                ? "Visitor"
+                : m.sender_name || "Agent";
+            return `[${formatShortTime(m.sent_at)}] ${who}: ${m.message_text}`;
+          })
+          .join(" | ") || "";
       return [
         t.property_name || "",
         formatTime(t.created_at),
@@ -234,7 +232,6 @@ export default function Dashboard() {
         t.visitor_email || "",
         `${t.visitor_city || ""}, ${t.visitor_country || ""}`,
         info?.location || "",
-        // Sales team fields
         s?.status || "",
         s?.converted ? "Yes" : "No",
         s?.premium_amount != null ? s.premium_amount : "",
@@ -249,8 +246,8 @@ export default function Dashboard() {
 
     const header = [
       "Property", "Date & Time", "Name", "Phone", "Email", "Location", "Visitor Location",
-      "Sales Status", "Converted", "Premium Amount", "Premium Collected", "Updated in CRM", "Other Info", "Remarks",
-      "Message Count", "Conversation",
+      "Sales Status", "Converted", "Premium Amount", "Premium Collected", "Updated in CRM",
+      "Other Info", "Remarks", "Message Count", "Conversation",
     ];
     const csvContent = [header, ...rows]
       .map((row) =>
@@ -258,37 +255,15 @@ export default function Dashboard() {
       )
       .join("\n");
 
-    const blob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob(["﻿" + csvContent], {
+      type: "text/csv;charset=utf-8;",
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    const label = selectedDate ? selectedDate : dateFrom || dateTo ? `${dateFrom || "start"}_to_${dateTo || "end"}` : "all";
     a.href = url;
-    a.download = `chats_${label}.csv`;
+    a.download = `chats-${viewDate}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  };
-
-  // Fetch the ENTIRE dataset from the server (not just loaded pages),
-  // apply the active filters, then export everything to CSV.
-  const downloadExcel = async () => {
-    if (exporting) return;
-    setExporting(true);
-    try {
-      const res = await fetch("/api/export");
-      if (!res.ok) throw new Error(`Export failed: ${res.status}`);
-      const json: { transcripts: DbChat[] } = await res.json();
-      const allFiltered = (json.transcripts || []).filter(matchesFilters);
-      if (allFiltered.length === 0) {
-        alert("No chats match the current filters.");
-        return;
-      }
-      buildCsv(allFiltered);
-    } catch (e) {
-      console.error("Export failed", e);
-      alert("Export failed. Please try again.");
-    } finally {
-      setExporting(false);
-    }
   };
 
   if (loading) {
@@ -296,7 +271,7 @@ export default function Dashboard() {
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent mx-auto mb-4"></div>
-          <p className="text-gray-800">Loading dashboard...</p>
+          <p className="text-gray-800">Loading {displayDate(viewDate)}'s chats...</p>
         </div>
       </div>
     );
@@ -310,7 +285,9 @@ export default function Dashboard() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-black">Tawk.to Dashboard</h1>
-              <p className="text-sm text-gray-500 mt-1">Last updated: {lastUpdate}</p>
+              <p className="text-sm text-gray-500 mt-1">
+                {isToday ? `Last updated: ${lastUpdate} · Auto-refresh every 5s` : `Viewing ${displayDate(viewDate)} · No auto-refresh`}
+              </p>
             </div>
             <div className="flex items-center gap-2">
               <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
@@ -340,9 +317,49 @@ export default function Dashboard() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-6">
-        {/* Filters */}
+        {/* Date Navigation + Filters */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
           <div className="flex flex-wrap gap-4 items-end">
+            {/* Day navigator */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setViewDate((d) => shiftDay(d, -1))}
+                className="px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 font-medium transition-colors"
+              >
+                ← Prev
+              </button>
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={viewDate}
+                  max={getTodayIST()}
+                  onChange={(e) => e.target.value && setViewDate(e.target.value)}
+                  className="px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
+                />
+                <span className="text-sm font-semibold text-gray-700 min-w-20">
+                  {displayDate(viewDate)}
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  const next = shiftDay(viewDate, 1);
+                  if (next <= getTodayIST()) setViewDate(next);
+                }}
+                disabled={viewDate >= getTodayIST()}
+                className="px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Next →
+              </button>
+              {!isToday && (
+                <button
+                  onClick={() => setViewDate(getTodayIST())}
+                  className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors text-sm"
+                >
+                  Back to Today
+                </button>
+              )}
+            </div>
+
             {/* Search */}
             <div className="flex-1 min-w-64">
               <div className="relative">
@@ -371,42 +388,9 @@ export default function Dashboard() {
               </select>
             </div>
 
-            {/* Single date */}
-            <div className="min-w-40">
-              <label className="block text-xs text-gray-500 mb-1">Single date</label>
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => { setSelectedDate(e.target.value); setDateFrom(""); setDateTo(""); }}
-                className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
-              />
-            </div>
-
-            {/* Date range: From */}
-            <div className="min-w-36">
-              <label className="block text-xs text-gray-500 mb-1">From</label>
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => { setDateFrom(e.target.value); setSelectedDate(""); }}
-                className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
-              />
-            </div>
-
-            {/* Date range: To */}
-            <div className="min-w-36">
-              <label className="block text-xs text-gray-500 mb-1">To</label>
-              <input
-                type="date"
-                value={dateTo}
-                onChange={(e) => { setDateTo(e.target.value); setSelectedDate(""); }}
-                className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
-              />
-            </div>
-
-            {hasAnyFilter && (
+            {(searchQuery || selectedProperty !== "all") && (
               <button
-                onClick={clearAllFilters}
+                onClick={() => { setSearchQuery(""); setSelectedProperty("all"); }}
                 className="px-4 py-2 text-gray-800 hover:text-black hover:bg-gray-100 rounded-lg transition-colors"
               >
                 ✕ Clear
@@ -415,8 +399,8 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Active Chats */}
-        {activeChats.length > 0 && (
+        {/* Active Chats (today only) */}
+        {isToday && activeChats.length > 0 && (
           <section className="mb-8">
             <h2 className="text-lg font-semibold text-black mb-4 flex items-center gap-2">
               <span className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></span>
@@ -468,15 +452,17 @@ export default function Dashboard() {
         <section>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-black">
-              Chat History ({hasAnyFilter ? `${filteredTranscripts.length} filtered` : `${transcripts.length} of ${total}`})
+              {displayDate(viewDate)} Chats
+              {searchQuery || selectedProperty !== "all"
+                ? ` (${filteredTranscripts.length} filtered)`
+                : ` (${total})`}
             </h2>
-            {total > 0 && (
+            {transcripts.length > 0 && (
               <button
                 onClick={downloadExcel}
-                disabled={exporting}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors text-sm"
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors text-sm"
               >
-                {exporting ? "⏳ Preparing…" : `⬇ Download Excel (all${hasAnyFilter ? " filtered" : ""})`}
+                ⬇ Download CSV
               </button>
             )}
           </div>
@@ -484,9 +470,13 @@ export default function Dashboard() {
           {filteredTranscripts.length === 0 ? (
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
               <div className="text-gray-400 text-6xl mb-4">📭</div>
-              <p className="text-gray-800 text-lg">No chats found</p>
+              <p className="text-gray-800 text-lg">No chats for {displayDate(viewDate)}</p>
               <p className="text-gray-500 text-sm mt-1">
-                {hasAnyFilter ? "Try adjusting your filters" : "Chats will appear here after they end"}
+                {searchQuery || selectedProperty !== "all"
+                  ? "Try adjusting your filters"
+                  : isToday
+                  ? "Chats will appear here after they end"
+                  : "No chats were recorded on this day"}
               </p>
             </div>
           ) : (
@@ -497,9 +487,7 @@ export default function Dashboard() {
                   <div key={transcript.chat_id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                     <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-4 py-3">
                       <div className="text-white font-bold text-lg">{transcript.property_name || "Unknown Property"}</div>
-                      <div className="text-white/80 text-xs mt-1">
-                        {formatDate(transcript.created_at)} • {formatShortTime(transcript.created_at)}
-                      </div>
+                      <div className="text-white/80 text-xs mt-1">{formatTime(transcript.created_at)}</div>
                     </div>
                     <div className="p-4">
                       {transcript.sales && (
@@ -523,11 +511,15 @@ export default function Dashboard() {
                       )}
                       <div className="mb-3">
                         <span className="text-xs text-gray-500 uppercase tracking-wide">Name</span>
-                        <div className="text-black font-semibold text-lg">{transcript.sales?.edited_name || visitorInfo?.name || transcript.visitor_name || "Not provided"}</div>
+                        <div className="text-black font-semibold text-lg">
+                          {transcript.sales?.edited_name || visitorInfo?.name || transcript.visitor_name || "Not provided"}
+                        </div>
                       </div>
                       <div className="mb-3">
                         <span className="text-xs text-gray-500 uppercase tracking-wide">Phone</span>
-                        <div className="text-black font-medium">{transcript.sales?.edited_phone || visitorInfo?.phone || transcript.visitor_phone || "Not provided"}</div>
+                        <div className="text-black font-medium">
+                          {transcript.sales?.edited_phone || visitorInfo?.phone || transcript.visitor_phone || "Not provided"}
+                        </div>
                       </div>
                       <div className="mb-3">
                         <span className="text-xs text-gray-500 uppercase tracking-wide">Location</span>
@@ -565,25 +557,14 @@ export default function Dashboard() {
               })}
             </div>
           )}
-
-          {/* Load More */}
-          {!hasAnyFilter && transcripts.length < total && (
-            <div className="text-center mt-8">
-              <button
-                onClick={handleLoadMore}
-                disabled={loadingMore}
-                className="px-8 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
-              >
-                {loadingMore ? "Loading..." : `Load More (${transcripts.length} of ${total})`}
-              </button>
-            </div>
-          )}
         </section>
       </main>
 
-      <div className="fixed bottom-4 right-4 bg-white shadow-lg border border-gray-200 rounded-full px-4 py-2 text-sm text-gray-800">
-        Auto-refresh every 5s
-      </div>
+      {isToday && (
+        <div className="fixed bottom-4 right-4 bg-white shadow-lg border border-gray-200 rounded-full px-4 py-2 text-sm text-gray-800">
+          Auto-refresh every 5s
+        </div>
+      )}
     </div>
   );
 }

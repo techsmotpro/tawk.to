@@ -227,18 +227,31 @@ async function expireStaleChats() {
   `;
 }
 
-const PAGE_SIZE = 100;
+// Returns [start, end) UTC boundaries for a given IST calendar day.
+function getISTDayBounds(dateStr?: string): { start: Date; end: Date } {
+  const date =
+    dateStr ||
+    new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  return {
+    start: new Date(date + "T00:00:00+05:30"),
+    end: new Date(date + "T23:59:59.999+05:30"),
+  };
+}
 
-// Get all data from DB
-export async function getData(offset = 0) {
-  // Auto-expire stale active chats before fetching
+const PAGE_SIZE = 500; // one day of chats will never exceed this
+
+// Get data for a specific IST day (defaults to today).
+export async function getData(offset = 0, dateStr?: string) {
   await expireStaleChats();
+
+  const { start, end } = getISTDayBounds(dateStr);
+  const startIso = start.toISOString();
+  const endIso = end.toISOString();
 
   const activeChats = await sql`
     SELECT * FROM chats WHERE status = 'active' ORDER BY started_at DESC
   `;
 
-  // Get messages for each active chat
   for (const chat of activeChats) {
     chat.messages = await sql`
       SELECT * FROM messages WHERE chat_id = ${chat.chat_id} ORDER BY sent_at ASC
@@ -250,12 +263,13 @@ export async function getData(offset = 0) {
     FROM chats c
     LEFT JOIN messages m ON c.chat_id = m.chat_id
     WHERE c.status IN ('transcript', 'ended')
+      AND c.created_at >= ${startIso}
+      AND c.created_at < ${endIso}
     GROUP BY c.id
     ORDER BY c.ended_at DESC NULLS LAST
     LIMIT ${PAGE_SIZE} OFFSET ${offset}
   `;
 
-  // Get messages for each transcript
   for (const t of transcripts) {
     t.messages = await sql`
       SELECT * FROM messages WHERE chat_id = ${t.chat_id} ORDER BY sent_at ASC
@@ -263,7 +277,10 @@ export async function getData(offset = 0) {
   }
 
   const totalRow = await sql`
-    SELECT COUNT(*) as total FROM chats WHERE status IN ('transcript', 'ended')
+    SELECT COUNT(*) as total FROM chats
+    WHERE status IN ('transcript', 'ended')
+      AND created_at >= ${startIso}
+      AND created_at < ${endIso}
   `;
   const total = Number(totalRow[0]?.total ?? 0);
 
@@ -273,7 +290,41 @@ export async function getData(offset = 0) {
     total,
     offset,
     pageSize: PAGE_SIZE,
+    date: dateStr || new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
   };
+}
+
+// Fetch all chats + messages for a given IST date for the end-of-day CSV export.
+export async function getChatsForExport(dateStr: string) {
+  const { start, end } = getISTDayBounds(dateStr);
+  const startIso = start.toISOString();
+  const endIso = end.toISOString();
+
+  const chats = await sql`
+    SELECT c.*
+    FROM chats c
+    WHERE c.created_at >= ${startIso} AND c.created_at < ${endIso}
+    ORDER BY c.created_at ASC
+  `;
+
+  if (chats.length === 0) return { chats: [], total: 0 };
+
+  const chatIds = chats.map((c) => c.chat_id);
+  const allMessages = await sql`
+    SELECT * FROM messages WHERE chat_id = ANY(${chatIds}) ORDER BY sent_at ASC
+  `;
+
+  const byChat = new Map<string, unknown[]>();
+  for (const m of allMessages) {
+    const arr = byChat.get(m.chat_id) ?? [];
+    arr.push(m);
+    byChat.set(m.chat_id, arr);
+  }
+  for (const c of chats) {
+    c.messages = byChat.get(c.chat_id) ?? [];
+  }
+
+  return { chats: await attachSalesLeads(chats), total: chats.length };
 }
 
 // Get ALL transcripts (no pagination) for full export.
