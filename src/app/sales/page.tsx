@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import FollowupBell from "@/components/FollowupBell";
 
 interface SalesLead {
   chat_id: string;
@@ -15,6 +16,7 @@ interface SalesLead {
   remarks: string | null;
   updated_by: string | null;
   updated_at: string | null;
+  followup_at: string | null;
 }
 
 interface Lead {
@@ -47,6 +49,22 @@ const STATUS_COLORS: Record<string, string> = {
   "Double Entry": "bg-orange-100 text-orange-700",
 };
 
+interface LeadHistory {
+  id: number;
+  chat_id: string;
+  edited_name: string | null;
+  edited_phone: string | null;
+  edited_info: string | null;
+  status: string;
+  converted: boolean;
+  premium_amount: string | null;
+  premium_collected: boolean;
+  updated_in_crm: boolean;
+  remarks: string | null;
+  updated_by: string | null;
+  saved_at: string;
+}
+
 interface FormState {
   edited_name: string;
   edited_phone: string;
@@ -57,6 +75,7 @@ interface FormState {
   premium_collected: boolean;
   updated_in_crm: boolean;
   remarks: string;
+  followup_at: string;
 }
 
 function leadToForm(lead: Lead): FormState {
@@ -71,6 +90,10 @@ function leadToForm(lead: Lead): FormState {
     premium_collected: s?.premium_collected ?? false,
     updated_in_crm: s?.updated_in_crm ?? false,
     remarks: s?.remarks ?? "",
+    followup_at: s?.followup_at ? (() => {
+      const d = new Date(s.followup_at);
+      return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    })() : "",
   };
 }
 
@@ -86,6 +109,7 @@ export default function SalesAdmin() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
+  const [historyCache, setHistoryCache] = useState<Record<string, LeadHistory[]>>({});
 
   const fetchData = useCallback(async (currentOffset = 0, append = false) => {
     try {
@@ -129,9 +153,19 @@ export default function SalesAdmin() {
     });
   }, [transcripts, search]);
 
+  const fmtSavedAt = (time: string) =>
+    time ? new Date(time).toLocaleString("en-GB", { hour12: true }) : "";
+
+  const fetchHistory = async (chatId: string) => {
+    const res = await fetch(`/api/sales/history?chat_id=${chatId}`);
+    const { history } = await res.json();
+    setHistoryCache(prev => ({ ...prev, [chatId]: history }));
+  };
+
   const startEdit = (lead: Lead) => {
     setEditingId(lead.chat_id);
     setForm(leadToForm(lead));
+    fetchHistory(lead.chat_id);
   };
 
   const cancelEdit = () => {
@@ -146,7 +180,11 @@ export default function SalesAdmin() {
       const res = await fetch("/api/sales/lead", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: chatId, ...form }),
+        body: JSON.stringify({
+          chat_id: chatId,
+          ...form,
+          followup_at: form.followup_at ? new Date(form.followup_at).toISOString() : null,
+        }),
       });
       if (res.status === 401) {
         window.location.href = "/login";
@@ -159,6 +197,10 @@ export default function SalesAdmin() {
           t.chat_id === chatId ? { ...t, sales: data.lead } : t
         )
       );
+      // Reload history so the just-saved snapshot shows up
+      const hRes = await fetch(`/api/sales/history?chat_id=${chatId}`);
+      const { history } = await hRes.json();
+      setHistoryCache(prev => ({ ...prev, [chatId]: history }));
       cancelEdit();
     } catch (e) {
       console.error("Save failed", e);
@@ -188,6 +230,7 @@ export default function SalesAdmin() {
             <p className="text-xs text-gray-500">{total} leads</p>
           </div>
           <div className="flex items-center gap-2">
+            <FollowupBell />
             <a
               href="/dashboard"
               className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-colors"
@@ -321,6 +364,17 @@ export default function SalesAdmin() {
                           ))}
                         </select>
                       </label>
+                      {form.status === "Follow-up" && (
+                        <label className="text-sm sm:col-span-2">
+                          <span className="block text-gray-600 mb-1">📅 Follow-up Date & Time</span>
+                          <input
+                            type="datetime-local"
+                            value={form.followup_at}
+                            onChange={(e) => setForm({ ...form, followup_at: e.target.value })}
+                            className="w-full px-3 py-2 bg-white border border-yellow-400 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                          />
+                        </label>
+                      )}
                       <label className="text-sm">
                         <span className="block text-gray-600 mb-1">Premium amount (₹)</span>
                         <input
@@ -388,6 +442,70 @@ export default function SalesAdmin() {
                         Cancel
                       </button>
                     </div>
+
+                    {/* Previous saves — history timeline */}
+                    {(historyCache[lead.chat_id] || []).length > 0 && (
+                      <div className="mt-5 pt-4 border-t border-gray-200">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Previous Updates</p>
+                        <div className="space-y-2 max-h-72 overflow-y-auto">
+                          {(historyCache[lead.chat_id] || []).map((h) => (
+                            <div key={h.id} className="bg-white border border-gray-200 rounded-lg p-3 text-xs space-y-2">
+                              {/* Timestamp + who */}
+                              <div className="flex items-center justify-between">
+                                <span className="font-semibold text-gray-500">{fmtSavedAt(h.saved_at)}</span>
+                                {h.updated_by && <span className="text-gray-400">by {h.updated_by}</span>}
+                              </div>
+
+                              {/* Status badges */}
+                              <div className="flex flex-wrap gap-1.5">
+                                <span className={`px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[h.status] || STATUS_COLORS.New}`}>
+                                  {h.status}
+                                </span>
+                                {h.converted && <span className="px-2 py-0.5 rounded-full font-medium bg-green-100 text-green-700">✓ Converted</span>}
+                                {h.premium_collected && <span className="px-2 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700">💰 Collected</span>}
+                                {h.updated_in_crm && <span className="px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700">CRM ✓</span>}
+                              </div>
+
+                              {/* All fields in a grid */}
+                              <div className="grid grid-cols-2 gap-x-4 gap-y-1 border-t border-gray-100 pt-2">
+                                {h.edited_name && (
+                                  <>
+                                    <span className="text-gray-400">Name</span>
+                                    <span className="text-gray-800 font-medium">{h.edited_name}</span>
+                                  </>
+                                )}
+                                {h.edited_phone && (
+                                  <>
+                                    <span className="text-gray-400">Phone</span>
+                                    <span className="text-gray-800">{h.edited_phone}</span>
+                                  </>
+                                )}
+                                {h.edited_info && (
+                                  <>
+                                    <span className="text-gray-400">Other info</span>
+                                    <span className="text-gray-800">{h.edited_info}</span>
+                                  </>
+                                )}
+                                {h.premium_amount != null && (
+                                  <>
+                                    <span className="text-gray-400">Premium (₹)</span>
+                                    <span className="text-gray-800 font-semibold">₹{h.premium_amount}</span>
+                                  </>
+                                )}
+                              </div>
+
+                              {/* Remarks */}
+                              {h.remarks && (
+                                <div className="bg-gray-50 rounded px-2 py-1.5 border-l-2 border-gray-300">
+                                  <span className="text-gray-400 block mb-0.5">Remarks</span>
+                                  <span className="text-gray-800">{h.remarks}</span>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

@@ -24,6 +24,7 @@ export interface SalesLead {
   remarks: string | null;
   updated_by: string | null;
   updated_at: string | null;
+  followup_at: string | null;
 }
 
 // Attach the sales_leads row (if any) to each chat as `chat.sales`.
@@ -61,6 +62,7 @@ interface SalesLeadInput {
   updated_in_crm?: boolean;
   remarks?: string | null;
   updated_by?: string | null;
+  followup_at?: string | null;
 }
 
 // Insert or update the sales lead for a chat.
@@ -77,17 +79,33 @@ export async function upsertSalesLead(input: SalesLeadInput) {
     updated_in_crm = false,
     remarks = null,
     updated_by = null,
+    followup_at = null,
   } = input;
+
+  // Snapshot the current row into history before overwriting
+  const existing = await sql`SELECT * FROM sales_leads WHERE chat_id = ${chat_id}`;
+  if (existing.length > 0) {
+    const prev = existing[0];
+    await sql`
+      INSERT INTO sales_lead_history
+        (chat_id, edited_name, edited_phone, edited_info, status, converted,
+         premium_amount, premium_collected, updated_in_crm, remarks, updated_by, saved_at)
+      VALUES
+        (${prev.chat_id}, ${prev.edited_name}, ${prev.edited_phone}, ${prev.edited_info},
+         ${prev.status}, ${prev.converted}, ${prev.premium_amount}, ${prev.premium_collected},
+         ${prev.updated_in_crm}, ${prev.remarks}, ${prev.updated_by}, ${prev.updated_at ?? new Date()})
+    `;
+  }
 
   const rows = await sql`
     INSERT INTO sales_leads (
       chat_id, edited_name, edited_phone, edited_info, status,
       converted, premium_amount, premium_collected, updated_in_crm,
-      remarks, updated_by, updated_at
+      remarks, updated_by, updated_at, followup_at
     ) VALUES (
       ${chat_id}, ${edited_name}, ${edited_phone}, ${edited_info}, ${status},
       ${converted}, ${premium_amount}, ${premium_collected}, ${updated_in_crm},
-      ${remarks}, ${updated_by}, NOW()
+      ${remarks}, ${updated_by}, NOW(), ${followup_at}
     )
     ON CONFLICT (chat_id) DO UPDATE SET
       edited_name = EXCLUDED.edited_name,
@@ -100,7 +118,8 @@ export async function upsertSalesLead(input: SalesLeadInput) {
       updated_in_crm = EXCLUDED.updated_in_crm,
       remarks = EXCLUDED.remarks,
       updated_by = EXCLUDED.updated_by,
-      updated_at = NOW()
+      updated_at = NOW(),
+      followup_at = EXCLUDED.followup_at
     RETURNING *
   `;
 

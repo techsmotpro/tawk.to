@@ -70,12 +70,42 @@ export async function initDb() {
     )
   `;
 
-  // Add visitor_phone column if it doesn't exist (migration for existing DBs)
+  await sql`
+    CREATE TABLE IF NOT EXISTS sales_lead_history (
+      id SERIAL PRIMARY KEY,
+      chat_id VARCHAR(255) REFERENCES chats(chat_id),
+      edited_name VARCHAR(255),
+      edited_phone VARCHAR(50),
+      edited_info TEXT,
+      status VARCHAR(50),
+      converted BOOLEAN DEFAULT FALSE,
+      premium_amount NUMERIC(12, 2),
+      premium_collected BOOLEAN DEFAULT FALSE,
+      updated_in_crm BOOLEAN DEFAULT FALSE,
+      remarks TEXT,
+      updated_by VARCHAR(255),
+      saved_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    )
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS chat_notes (
+      id SERIAL PRIMARY KEY,
+      chat_id VARCHAR(255) REFERENCES chats(chat_id),
+      note_type VARCHAR(50) DEFAULT 'info',
+      amount INTEGER,
+      note TEXT NOT NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    )
+  `;
+
+  // Migrations for existing DBs
   try {
     await sql`ALTER TABLE chats ADD COLUMN IF NOT EXISTS visitor_phone VARCHAR(50)`;
-  } catch (e) {
-    // Column may already exist, ignore
-  }
+  } catch (e) {}
+  try {
+    await sql`ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS followup_at TIMESTAMP WITH TIME ZONE`;
+  } catch (e) {}
 
   console.log("✅ Database tables initialized");
 }
