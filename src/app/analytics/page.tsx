@@ -627,9 +627,9 @@ export default function AnalyticsPage() {
                     onClick={downloadHistSimpleCsv}
                     className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg transition-colors"
                   >
-                    ⬇ Download Excel (Name, Phone, Location, Date, Property)
+                    ⬇ Download Excel — {filteredHistChats.length} rows (Name, Phone, Location, Date, Property)
                   </button>
-                  <p className="text-xs text-gray-400 mt-2">{filteredHistChats.length} rows • matches current filters</p>
+                  <p className="text-xs text-gray-400 mt-2">Downloads exactly what&apos;s shown above ({filteredHistChats.length} of {histTotal} loaded)</p>
                 </div>
               )}
 
