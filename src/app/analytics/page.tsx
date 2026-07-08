@@ -70,6 +70,7 @@ export default function AnalyticsPage() {
   // History browser state
   const [histSearch, setHistSearch] = useState("");
   const [histProperty, setHistProperty] = useState("all");
+  const [histQualityOnly, setHistQualityOnly] = useState(false);
   const [histSingleDate, setHistSingleDate] = useState("");
   const [histDateFrom, setHistDateFrom] = useState("");
   const [histDateTo, setHistDateTo] = useState("");
@@ -134,22 +135,57 @@ export default function AnalyticsPage() {
     return Array.from(s);
   }, [histChats]);
 
-  const filteredHistChats = useMemo(() => {
-    const q = histSearch.toLowerCase();
-    return histChats.filter((c) => {
-      const matchSearch = q === "" ||
-        c.visitor_name?.toLowerCase().includes(q) ||
-        c.visitor_email?.toLowerCase().includes(q) ||
-        c.visitor_phone?.toLowerCase().includes(q) ||
-        c.messages?.some((m) => m.message_text?.toLowerCase().includes(q));
-      const matchProp = histProperty === "all" || c.property_name === histProperty;
-      return matchSearch && matchProp;
-    });
-  }, [histChats, histSearch, histProperty]);
 
   const fmtTime = (t: string) => t ? new Date(t).toLocaleString("en-GB", { timeZone: "Asia/Kolkata", hour12: true }) : "";
   const fmtShort = (t: string) => t ? new Date(t).toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true }) : "";
   const fmtDate = (t: string) => t ? new Date(t).toLocaleDateString("en-GB", { timeZone: "Asia/Kolkata" }) : "";
+
+  // Best available phone for a chat (sales edit > parsed from message > visitor field)
+  const getPhone = (c: DbChat) => {
+    const info = parseInfo(c.messages);
+    return c.sales?.edited_phone || info?.phone || c.visitor_phone || "";
+  };
+
+  // Is this a real, usable phone number? Rejects empty, too-short,
+  // all-same-digit, sequential, and common dummy numbers.
+  const isRealPhone = (raw: string) => {
+    let d = (raw.match(/\d/g) || []).join("");
+    if (!d) return false;
+    // strip India country code
+    if (d.length === 12 && d.startsWith("91")) d = d.slice(2);
+    if (d.length === 11 && d.startsWith("0")) d = d.slice(1);
+    if (d.length !== 10) return false;                 // Indian mobile = 10 digits
+    if (!/^[6-9]/.test(d)) return false;               // must start 6-9
+    if (/^(\d)\1{9}$/.test(d)) return false;           // all same digit
+    if ("0123456789".includes(d) || "9876543210".includes(d)) return false; // sequential
+    const dummies = ["1234567890", "9999999999", "0000000000", "1111111111", "1234567891"];
+    if (dummies.includes(d)) return false;
+    return true;
+  };
+
+  // Test / junk entry detection by name + message content.
+  const isTestEntry = (c: DbChat) => {
+    const info = parseInfo(c.messages);
+    const name = (c.sales?.edited_name || info?.name || c.visitor_name || "").toLowerCase();
+    const junkWords = ["test", "asdf", "qwerty", "demo", "dummy", "fake", "xyz", "abcd"];
+    const nameJunk = junkWords.some((w) => name.includes(w)) || name.trim() === "";
+    const firstMsg = (c.messages?.find((m) => m.sender_type === "v" || m.sender_type === "visitor")?.message_text || "").toLowerCase();
+    const msgJunk = junkWords.some((w) => firstMsg.trim() === w);
+    return nameJunk || msgJunk;
+  };
+
+  // Normalised 10-digit phone for dedup (empty if not extractable)
+  const normPhone = (raw: string) => {
+    let d = (raw.match(/\d/g) || []).join("");
+    if (d.length === 12 && d.startsWith("91")) d = d.slice(2);
+    if (d.length === 11 && d.startsWith("0")) d = d.slice(1);
+    return d.length === 10 ? d : "";
+  };
+
+  const isQualityLead = (c: DbChat) =>
+    isRealPhone(getPhone(c)) &&
+    !isTestEntry(c) &&
+    c.sales?.status !== "Double Entry";
 
   const parseInfo = (messages?: DbChat["messages"]) => {
     if (!messages?.length) return null;
@@ -163,6 +199,32 @@ export default function AnalyticsPage() {
       location: text.match(/Location\s*:\s*([^\r\n]+)/i)?.[1]?.trim() || null,
     };
   };
+
+  const filteredHistChats = useMemo(() => {
+    const q = histSearch.toLowerCase();
+    const seenPhones = new Set<string>();
+    return histChats.filter((c) => {
+      const matchSearch = q === "" ||
+        c.visitor_name?.toLowerCase().includes(q) ||
+        c.visitor_email?.toLowerCase().includes(q) ||
+        c.visitor_phone?.toLowerCase().includes(q) ||
+        c.messages?.some((m) => m.message_text?.toLowerCase().includes(q));
+      const matchProp = histProperty === "all" || c.property_name === histProperty;
+      // Always hide cards with no phone number at all
+      const hasPhone = (getPhone(c).match(/\d/g) || []).length > 0;
+      if (!(matchSearch && matchProp && hasPhone)) return false;
+      if (!histQualityOnly) return true;
+      if (!isQualityLead(c)) return false;
+      // Drop repeat entries with the same phone number (keep first)
+      const p = normPhone(getPhone(c));
+      if (p) {
+        if (seenPhones.has(p)) return false;
+        seenPhones.add(p);
+      }
+      return true;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [histChats, histSearch, histProperty, histQualityOnly]);
 
   const getFlag = (c: string) => ({ IN:"🇮🇳",US:"🇺🇸",GB:"🇬🇧",UK:"🇬🇧",CA:"🇨🇦",AU:"🇦🇺",DE:"🇩🇪",FR:"🇫🇷" }[c] || "🌍");
 
@@ -198,6 +260,31 @@ export default function AnalyticsPage() {
     a.href = url;
     const label = histSingleDate || (histDateFrom || histDateTo ? `${histDateFrom||"start"}_to_${histDateTo||"end"}` : "history");
     a.download = `chats-${label}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadHistSimpleCsv = () => {
+    const toExport = filteredHistChats;
+    if (!toExport.length) { alert("No chats to export."); return; }
+    const rows = toExport.map((c) => {
+      const info = parseInfo(c.messages);
+      return [
+        c.property_name || "",
+        fmtDate(c.created_at),
+        c.sales?.edited_name || info?.name || c.visitor_name || "",
+        c.sales?.edited_phone || info?.phone || c.visitor_phone || "",
+        `${c.visitor_city || ""}, ${c.visitor_country || ""}`.replace(/^, |, $/g, ""),
+      ];
+    });
+    const header = ["Property", "Date", "Name", "Phone", "Location"];
+    const csv = [header, ...rows].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const label = histSingleDate || (histDateFrom || histDateTo ? `${histDateFrom || "start"}_to_${histDateTo || "end"}` : "history");
+    a.download = `leads-${label}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -426,6 +513,17 @@ export default function AnalyticsPage() {
                 </div>
               )}
 
+              {/* Quality-only toggle */}
+              <label className="flex items-center gap-2 self-center pb-0.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={histQualityOnly}
+                  onChange={(e) => setHistQualityOnly(e.target.checked)}
+                  className="w-4 h-4 accent-indigo-600"
+                />
+                <span className="text-sm text-black font-medium">Quality leads only</span>
+              </label>
+
               {/* Load button */}
               <button
                 onClick={() => loadHistory(0, false)}
@@ -437,7 +535,7 @@ export default function AnalyticsPage() {
 
               {histLoaded && (
                 <button
-                  onClick={() => { setHistChats([]); setHistLoaded(false); setHistSearch(""); setHistProperty("all"); setHistSingleDate(""); setHistDateFrom(""); setHistDateTo(""); }}
+                  onClick={() => { setHistChats([]); setHistLoaded(false); setHistSearch(""); setHistProperty("all"); setHistQualityOnly(false); setHistSingleDate(""); setHistDateFrom(""); setHistDateTo(""); }}
                   className="px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors text-sm"
                 >
                   ✕ Clear
@@ -452,8 +550,8 @@ export default function AnalyticsPage() {
           {histLoaded && (
             <>
               <p className="text-sm text-gray-500 mb-4">
-                {histSearch || histProperty !== "all"
-                  ? `${filteredHistChats.length} of ${histTotal} chats`
+                {histSearch || histProperty !== "all" || histQualityOnly
+                  ? `${filteredHistChats.length} of ${histTotal} chats${histQualityOnly ? " (quality only)" : ""}`
                   : `${histTotal} chats`}
               </p>
 
@@ -519,6 +617,19 @@ export default function AnalyticsPage() {
                       </div>
                     );
                   })}
+                </div>
+              )}
+
+              {/* Simple export — Property, Date, Name, Phone, Location only */}
+              {filteredHistChats.length > 0 && (
+                <div className="text-center mt-6">
+                  <button
+                    onClick={downloadHistSimpleCsv}
+                    className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg transition-colors"
+                  >
+                    ⬇ Download Excel (Name, Phone, Location, Date, Property)
+                  </button>
+                  <p className="text-xs text-gray-400 mt-2">{filteredHistChats.length} rows • matches current filters</p>
                 </div>
               )}
 
